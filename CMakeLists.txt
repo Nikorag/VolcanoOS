@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(VolcanoOS VERSION 0.1.0 LANGUAGES C CXX)
+project(ZontoVolcano VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,42 +49,42 @@ if(APPLE)
   list(APPEND VOS_SOURCES src/webview_mac.mm src/overlay_mac.mm src/tokenstore_mac.cpp)
 endif()
 
-add_executable(VolcanoOS ${VOS_SOURCES})
+add_executable(ZontoVolcano ${VOS_SOURCES})
 if(APPLE)
   set_source_files_properties(src/webview_mac.mm src/overlay_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
-target_include_directories(VolcanoOS PRIVATE src third_party ${LibArchive_INCLUDE_DIRS})
-target_compile_definitions(VolcanoOS PRIVATE
+target_include_directories(ZontoVolcano PRIVATE src third_party ${LibArchive_INCLUDE_DIRS})
+target_compile_definitions(ZontoVolcano PRIVATE
   VOS_VERSION="${PROJECT_VERSION}"
   VOS_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets")
 
 if(MSVC)
-  target_compile_options(VolcanoOS PRIVATE /W3 /utf-8)
+  target_compile_options(ZontoVolcano PRIVATE /W3 /utf-8)
 else()
-  target_compile_options(VolcanoOS PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_options(ZontoVolcano PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
-target_link_libraries(VolcanoOS PRIVATE
+target_link_libraries(ZontoVolcano PRIVATE
   SDL2::SDL2 SDL2_ttf::SDL2_ttf SDL2_image::SDL2_image
   CURL::libcurl ${LibArchive_LIBRARIES})
 
 if(TARGET SDL2::SDL2main AND WIN32)
-  target_link_libraries(VolcanoOS PRIVATE SDL2::SDL2main)
+  target_link_libraries(ZontoVolcano PRIVATE SDL2::SDL2main)
 endif()
 if(WIN32)
-  target_link_libraries(VolcanoOS PRIVATE ws2_32 bcrypt)
+  target_link_libraries(ZontoVolcano PRIVATE ws2_32 bcrypt)
 endif()
 if(APPLE)
-  target_link_libraries(VolcanoOS PRIVATE
+  target_link_libraries(ZontoVolcano PRIVATE
     "-framework Cocoa" "-framework WebKit" "-framework Security" "-framework QuartzCore" "-framework CoreFoundation")
 endif()
 if(UNIX AND NOT APPLE)
-  target_link_libraries(VolcanoOS PRIVATE pthread)
+  target_link_libraries(ZontoVolcano PRIVATE pthread)
 endif()
 
 # Ship the fonts beside the binary so the build tree is relocatable.
-add_custom_command(TARGET VolcanoOS POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:VolcanoOS>/assets)
+add_custom_command(TARGET ZontoVolcano POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:ZontoVolcano>/assets)
 
-install(TARGETS VolcanoOS RUNTIME DESTINATION bin)
+install(TARGETS ZontoVolcano RUNTIME DESTINATION bin)
 install(DIRECTORY assets DESTINATION bin)

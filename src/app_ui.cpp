@@ -77,17 +77,10 @@ void arrow(Gfx& g, float cx, float cy, float r, bool up, Color c) {
 // ---- logo ---------------------------------------------------------------------
 
 void App::drawMarkOn(Gfx& g, float cx, float cy, float s, double now) {
+  // `s` is the old mark's nominal size; the real logo is drawn ~1.5x that tall.
   float pulse = 0.75f + 0.25f * std::sin(static_cast<float>(now) * 2.1f);
-  g.glow(cx, cy - s * 0.2f, s * 1.1f, s * 0.8f, Color(255, 100, 30, static_cast<uint8_t>(70 * pulse)));
-  std::vector<SDL_FPoint> cone = {{cx - s * 0.62f, cy + s * 0.42f}, {cx - s * 0.15f, cy - s * 0.30f}, {cx, cy - s * 0.17f},
-                                  {cx + s * 0.15f, cy - s * 0.30f}, {cx + s * 0.62f, cy + s * 0.42f}};
-  g.polygon(cone, Color(46, 30, 24));
-  for (size_t i = 0; i + 1 < cone.size(); ++i)
-    g.line(cone[i].x, cone[i].y, cone[i + 1].x, cone[i + 1].y, std::max(1.6f, s * 0.07f), theme::magma);
-  g.glow(cx, cy - s * 0.24f, s * 0.35f, s * 0.2f, Color(255, 210, 120, static_cast<uint8_t>(210 * pulse)));
-  // ember
-  float ey = cy - s * 0.55f - std::fmod(static_cast<float>(now) * 14, s * 0.5f);
-  g.glow(cx + std::sin(static_cast<float>(now) * 3) * s * 0.08f, ey, s * 0.09f, s * 0.09f, theme::ember);
+  g.glow(cx, cy, s * 1.5f, s * 1.1f, Color(255, 100, 30, static_cast<uint8_t>(60 * pulse)));
+  g.logo(cx, cy, s * 1.5f);
 }
 
 // ---- frame dispatch ---------------------------------------------------------------
@@ -130,23 +123,23 @@ void App::frame(double now, float dt) {
 
 // ---- boot / sign-in ---------------------------------------------------------------
 
+// Console brand: ZONTO in white, VOLCANO in magma, with the software name beneath.
 static void wordmark(Gfx& g, float cx, float y, float size, double now, bool tag) {
   TextStyle a = head(size, theme::text, size * 0.16f);
-  a.align = Align::Center;
-  Vec2 m = g.measure("VOLCANO OS", a);
-  // Two-tone: VOLCANO in white, OS in magma.
-  TextStyle v = a;
-  v.align = Align::Left;
-  float vw = g.measure("VOLCANO ", v).x;
+  Vec2 m = g.measure("ZONTO VOLCANO", a);
   float x0 = cx - m.x / 2;
-  g.text("VOLCANO ", x0, y, v);
-  TextStyle o = v;
+  float zw = g.measure("ZONTO ", a).x;
+  g.text("ZONTO ", x0, y, a);
+  TextStyle o = a;
   o.color = theme::magma;
-  g.text("OS", x0 + vw, y, o);
+  g.text("VOLCANO", x0 + zw, y, o);
   if (tag) {
-    TextStyle t = mono(size * 0.17f, theme::dim, size * 0.05f);
+    TextStyle t = mono(size * 0.19f, theme::text, size * 0.06f);
     t.align = Align::Center;
-    g.text("THE ZONTO GAMES BIG PICTURE LAUNCHER", cx, y + m.y + size * 0.12f, t);
+    g.text("VOLCANO OS", cx, y + m.y + size * 0.10f, t);
+    TextStyle u = mono(size * 0.15f, theme::dim, size * 0.045f);
+    u.align = Align::Center;
+    g.text("THE ZONTO GAMES BIG PICTURE LAUNCHER", cx, y + m.y + size * 0.10f + size * 0.34f, u);
   }
   (void)now;
 }
@@ -259,11 +252,15 @@ void App::drawHome(double now, float dt) {
 
 void App::drawTopBar(double now) {
   const float W = gfx_.W(), cy = 62;
-  drawMark(kMargin + 22, cy + 4, 34, now);
-  TextStyle w = head(26, theme::text, 7);
-  float vw = gfx_.text("VOLCANO ", kMargin + 62, cy - 15, w).x;
-  w.color = theme::magma;
-  gfx_.text("OS", kMargin + 62 + vw, cy - 15, w);
+  // Scrim so the bar reads over any hero art, plus a translucent pill behind each
+  // cluster (same treatment as the player chip).
+  gfx_.vgrad(0, 0, W, 150, Color(8, 6, 6, 205), Color(8, 6, 6, 0));
+  auto pill = [&](float x0, float x1) {
+    gfx_.rrect(x0, cy - 32, x1 - x0, 64, 32, Color(10, 8, 7, 178));
+    gfx_.rrectLine(x0, cy - 32, x1 - x0, 64, 32, 1.2f, theme::line.alpha(0.8f));
+  };
+  drawMark(kMargin + 30, cy + 2, 38, now);
+  gfx_.text("ZONTO", kMargin + 84, cy - 15, head(26, theme::text, 7));
 
   // Tabs with shoulder glyphs: library filters on Home, pages elsewhere.
   const bool onPages = screen_ == Screen::Pages;
@@ -271,58 +268,77 @@ void App::drawTopBar(double now) {
   if (onPages)
     for (int i = 0; i < 3; ++i) labels[i] = Pages::label(i);
   const int activeTab = onPages ? static_cast<int>(pages_->tab()) : static_cast<int>(filter_);
-  float x = 520;
-  float gw = ui::promptWidth(gfx_, input_.style(), Action::LB, "", 20);
-  ui::prompt(gfx_, input_.style(), Action::LB, "", x, cy - 12, 20);
-  x += gw + 26;
-  for (int i = 0; i < 3; ++i) {
-    bool on = activeTab == i;
-    TextStyle t = mono(18, on ? theme::text : theme::faint, 4);
-    t.bold = on;
-    Vec2 m = gfx_.measure(labels[i], t);
-    gfx_.text(labels[i], x, cy - m.y / 2, t);
-    if (on) {
-      gfx_.rect(x, cy + 18, m.x, 3, theme::magma);
-      gfx_.glow(x + m.x / 2, cy + 19, m.x * 0.8f, 14, theme::magma.alpha(0.35f));
-    }
-    x += m.x + 40;
-  }
-  ui::prompt(gfx_, input_.style(), Action::RB, "", x - 14, cy - 12, 20);
+  const PadStyle ps = input_.style();
 
-  // Right cluster: player, clock, device.
-  float rx = W - kMargin;
-  if (!player_.gamertag.empty()) {
-    TextStyle n = head(20, theme::text, 2);
-    Vec2 m = gfx_.measure(upper(player_.gamertag), n);
-    rx -= 46;
-    gfx_.circle(rx + 23, cy, 23, theme::panelHi);
-    gfx_.ring(rx + 23, cy, 23, 2, theme::magma);
-    TextStyle in = head(22, theme::magma, 0);
-    in.align = Align::Center;
-    std::string ini(1, static_cast<char>(std::toupper(static_cast<unsigned char>(player_.gamertag[0]))));
-    gfx_.text(ini, rx + 23, cy - gfx_.measure(ini, in).y / 2, in);
-    rx -= 16 + m.x;
-    gfx_.text(upper(player_.gamertag), rx, cy - 20, n);
-    TextStyle lv = mono(13, theme::dim, 3);
-    gfx_.text("LEVEL " + std::to_string(player_.level), rx, cy + 4, lv);
-    rx -= 36;
-  }
-  TextStyle c = mono(22, theme::dim, 2);
-  std::string clock = clockText();
-  Vec2 cm = gfx_.measure(clock, c);
-  rx -= cm.x;
-  gfx_.text(clock, rx, cy - cm.y / 2, c);
-  rx -= 34;
-  if (offline_) {
-    TextStyle oc = mono(13, theme::warn, 2.2f);
-    float cw = gfx_.measure("OFFLINE", oc).x + 13 * 1.3f;
-    ui::chip(gfx_, "OFFLINE", rx - cw, cy - 13, theme::warn, theme::warn, 13);
-    rx -= cw + 20;
-  }
-  // Controller indicator.
-  bool pad = input_.hasPad();
-  gfx_.circle(rx - 6, cy, 5, pad ? theme::ok : theme::faint);
-  if (pad) gfx_.glow(rx - 6, cy, 14, 14, theme::ok.alpha(0.35f));
+  auto tabs = [&](bool draw) {
+    float x = 520;
+    float gw = ui::promptWidth(gfx_, ps, Action::LB, "", 20);
+    if (draw) ui::prompt(gfx_, ps, Action::LB, "", x, cy - 12, 20);
+    x += gw + 26;
+    for (int i = 0; i < 3; ++i) {
+      bool on = activeTab == i;
+      TextStyle t = mono(18, on ? theme::text : theme::dim, 4);
+      t.bold = on;
+      Vec2 m = gfx_.measure(labels[i], t);
+      if (draw) {
+        gfx_.text(labels[i], x, cy - m.y / 2, t);
+        if (on) {
+          gfx_.rect(x, cy + 18, m.x, 3, theme::magma);
+          gfx_.glow(x + m.x / 2, cy + 19, m.x * 0.8f, 14, theme::magma.alpha(0.35f));
+        }
+      }
+      x += m.x + 40;
+    }
+    if (draw) ui::prompt(gfx_, ps, Action::RB, "", x - 14, cy - 12, 20);
+    return x - 14 + ui::promptWidth(gfx_, ps, Action::RB, "", 20);
+  };
+  pill(500, tabs(false) + 26);
+  tabs(true);
+
+  // Right cluster: device dot, offline chip, clock, player.
+  const std::string clock = clockText();
+  TextStyle c = mono(22, theme::text, 2);
+  TextStyle n = head(20, theme::text, 2);
+  TextStyle oc = mono(13, theme::warn, 2.2f);
+  const std::string tag = upper(player_.gamertag);
+  auto cluster = [&](bool draw) {
+    float rx = W - kMargin;
+    if (!tag.empty()) {
+      Vec2 m = gfx_.measure(tag, n);
+      rx -= 46;
+      if (draw) {
+        gfx_.circle(rx + 23, cy, 23, theme::panelHi);
+        gfx_.ring(rx + 23, cy, 23, 2, theme::magma);
+        TextStyle in = head(22, theme::magma, 0);
+        in.align = Align::Center;
+        std::string ini(1, static_cast<char>(std::toupper(static_cast<unsigned char>(player_.gamertag[0]))));
+        gfx_.text(ini, rx + 23, cy - gfx_.measure(ini, in).y / 2, in);
+      }
+      rx -= 16 + m.x;
+      if (draw) {
+        gfx_.text(tag, rx, cy - 20, n);
+        gfx_.text("LEVEL " + std::to_string(player_.level), rx, cy + 4, mono(13, theme::dim, 3));
+      }
+      rx -= 36;
+    }
+    Vec2 cm = gfx_.measure(clock, c);
+    rx -= cm.x;
+    if (draw) gfx_.text(clock, rx, cy - cm.y / 2, c);
+    rx -= 34;
+    if (offline_) {
+      float cw = gfx_.measure("OFFLINE", oc).x + 13 * 1.3f;
+      if (draw) ui::chip(gfx_, "OFFLINE", rx - cw, cy - 13, theme::warn, theme::warn, 13);
+      rx -= cw + 20;
+    }
+    if (draw) {
+      bool pad = input_.hasPad();
+      gfx_.circle(rx - 6, cy, 5, pad ? theme::ok : theme::faint);
+      if (pad) gfx_.glow(rx - 6, cy, 14, 14, theme::ok.alpha(0.35f));
+    }
+    return rx - 6;
+  };
+  pill(cluster(false) - 22, W - kMargin + 16);
+  cluster(true);
 }
 
 void App::drawPages(double now) {
@@ -363,10 +379,14 @@ void App::drawInfo(const GameEntry* g, double now) {
   float slide = ui::easeOut(infoSlide_);
   float ox = (1 - slide) * -36, a = slide;
   Primary prim = primaryFor(*g);
+  // Translucent backing so text stays readable over any artwork.
+  auto backing = [&](float x, float y, float w, float h) {
+    gfx_.rrect(x, y, w, h, 14, Color(8, 6, 6, static_cast<uint8_t>(168 * a)));
+    gfx_.rrectLine(x, y, w, h, 14, 1.2f, theme::line.alpha(0.7f * a));
+  };
 
   // Tags.
   std::string tags = upper(g->tags.empty() ? (g->isWeb() ? "WEB GAME" : "GAME") : g->tags);
-  gfx_.text(tags, x0 + ox, 176, mono(17, theme::magma.alpha(a), 5));
 
   // Title, shrunk to fit one line.
   std::string title = upper(g->name);
@@ -379,13 +399,17 @@ void App::drawInfo(const GameEntry* g, double now) {
   }
   title = gfx_.ellipsize(title, ts, maxW);
   Vec2 tm = gfx_.measure(title, ts);
-  shadowText(gfx_, title, x0 + ox, 208, ts, 3);
 
   // Blurb, capped at three lines.
-  TextStyle bs = head(24, theme::dim.alpha(a), 0, false);
+  TextStyle bs = head(24, theme::text.alpha(a * 0.86f), 0, false);
   bs.wrap = std::min(820.f, gfx_.W() * 0.46f);
   bs.lineHeight = 1.18f;
   std::string blurb = g->blurb.empty() ? "No description yet." : clampText(g->blurb, 190);
+  Vec2 bm = gfx_.measure(blurb, bs);
+  float panelW = std::min(gfx_.W() * 0.62f, std::max(tm.x, bm.x) + 60);
+  backing(x0 + ox - 28, 156, panelW, (208 + tm.y + 18 + bm.y + 22) - 156);
+  gfx_.text(tags, x0 + ox, 176, mono(17, theme::magma.alpha(a), 5));
+  shadowText(gfx_, title, x0 + ox, 208, ts, 3);
   gfx_.text(blurb, x0 + ox, 208 + tm.y + 18, bs);
 
   // Stat row.
@@ -407,8 +431,15 @@ void App::drawInfo(const GameEntry* g, double now) {
     stats.push_back({inst ? "UPDATE SIZE" : "DOWNLOAD", humanBytes(g->build.sizeBytes), theme::text, -1});
 
   float sx = x0 + ox, sy = 520;
+  const bool installing = prim.kind == Kind::Installing;
+  if (!installing) {  // the progress block below takes this row's place while installing
+    float total = 0;
+    for (auto& s : stats) total += std::max(gfx_.measure(s.value, head(30, s.c, 1)).x, 150.f) + 56;
+    backing(sx - 28, sy - 20, total, 106);
+  }
   for (auto& s : stats) {
-    TextStyle l = mono(13, theme::faint.alpha(a), 3.5f);
+    if (installing) break;
+    TextStyle l = mono(13, theme::dim.alpha(a), 3.5f);
     gfx_.text(s.label, sx, sy, l);
     TextStyle v = head(30, s.c.alpha(a), 1);
     Vec2 vm = gfx_.measure(s.value, v);
@@ -419,7 +450,8 @@ void App::drawInfo(const GameEntry* g, double now) {
   }
 
   // Action area.
-  float by = prim.kind == Kind::Installing ? 586.f : 616.f;
+  float by = installing ? 512.f : 630.f;
+  if (installing) backing(x0 + ox - 28, by - 24, 700, 162);
   if (prim.kind == Kind::Installing) {
     auto j = installer_->job(g->slug);
     float frac = j ? j->fraction() : 0;
@@ -435,15 +467,13 @@ void App::drawInfo(const GameEntry* g, double now) {
     gfx_.text(detail, x0 + ox, by + 40, r);
     ui::progressBar(gfx_, x0 + ox, by + 78, 620, 10, frac, theme::magma);
     gfx_.glow(x0 + ox + 620 * frac, by + 83, 40, 22, theme::magma.alpha(0.4f));
-    ui::prompt(gfx_, input_.style(), Action::Back, "CANCEL", x0 + ox, by + 106, 22);
+    ui::prompt(gfx_, input_.style(), Action::Back, "CANCEL", x0 + ox, by + 104, 22);
   } else {
     Color accent = prim.kind == Kind::Update ? theme::ember : prim.kind == Kind::Install ? theme::magma : theme::magma;
     if (prim.kind == Kind::Play) accent = Color(255, 122, 40);
     float bw = std::max(400.f, 150 + gfx_.measure(prim.label, head(30, theme::text, 4)).x);
-    ui::button(gfx_, x0 + ox, by, bw, 84, prim.label, accent, prim.enabled, now);
-    if (prim.enabled) ui::prompt(gfx_, input_.style(), Action::Accept, "", x0 + ox + 26, by + 84 / 2.f - 14, 24);
-    float px = x0 + ox + bw + 40;
-    px += ui::prompt(gfx_, input_.style(), Action::X, "OPTIONS", px, by + 28, 24) + 34;
+    // The hint bar already says what A and X do; no duplicate prompts here.
+    ui::button(gfx_, x0 + ox, by, bw, 76, prim.label, accent, prim.enabled, now);
   }
 }
 
@@ -529,10 +559,10 @@ void App::drawShelf(double now, float dt) {
   int n = static_cast<int>(view_.size());
 
   // Section label.
-  TextStyle l = mono(14, theme::faint, 5);
+  TextStyle l = mono(14, theme::dim, 5);
   gfx_.text("LIBRARY", kMargin, 724, l);
   std::string count = std::to_string(n) + (n == 1 ? " TITLE" : " TITLES");
-  gfx_.text(count, kMargin + 120, 724, mono(14, theme::dim, 3));
+  gfx_.text(count, kMargin + 120, 724, mono(14, theme::text, 3));
   if (loadingLibrary_) {
     gfx_.arc(kMargin + 270, 730, 8, 2.5f, static_cast<float>(now) * 6, static_cast<float>(now) * 6 + 4, theme::magma);
     gfx_.text("SYNCING", kMargin + 288, 724, mono(14, theme::magma, 3));
@@ -587,8 +617,6 @@ void App::drawHints(double now) {
     if (!label.empty()) x += ui::prompt(gfx_, st, Action::Accept, label, x, y, 22) + 44;
     x += ui::prompt(gfx_, st, Action::X, "OPTIONS", x, y, 22) + 44;
   }
-  x += ui::prompt(gfx_, st, Action::LB, "", x, y, 22) + 8;
-  x += ui::prompt(gfx_, st, Action::RB, "FILTER", x, y, 22) + 44;
   x += ui::prompt(gfx_, st, Action::Y, "REFRESH", x, y, 22) + 44;
   float w = ui::promptWidth(gfx_, st, Action::Start, "MENU", 22);
   ui::prompt(gfx_, st, Action::Start, "MENU", gfx_.W() - kMargin - w, y, 22);

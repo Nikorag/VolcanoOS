@@ -12,7 +12,7 @@ void httpGlobalCleanup() { curl_global_cleanup(); }
 
 namespace {
 
-const char* kUserAgent = "VolcanoOS/" VOS_VERSION " (Zonto Games launcher)";
+const char* kUserAgent = "ZontoVolcano/" VOS_VERSION " VolcanoOS (Zonto Games launcher)";
 
 size_t writeString(char* p, size_t sz, size_t n, void* ud) {
   static_cast<std::string*>(ud)->append(p, sz * n);

@@ -38,7 +38,7 @@ constexpr Color panelHi{38, 30, 26};
 constexpr Color line{64, 49, 41};
 constexpr Color text{245, 237, 229};
 constexpr Color dim{160, 142, 129};
-constexpr Color faint{98, 85, 76};
+constexpr Color faint{132, 117, 105};
 constexpr Color magma{255, 106, 31};
 constexpr Color ember{255, 178, 71};
 constexpr Color lava{226, 52, 28};
@@ -114,6 +114,10 @@ class Gfx {
 
   SDL_Texture* makeTexture(SDL_Surface* s);  // takes no ownership of the surface
 
+  // The Zonto Volcano mark (assets/logo/zonto-volcano.svg), rasterised crisply at
+  // the size it's drawn. Centred on (cx, cy), `h` UI units tall. Returns its width.
+  float logo(float cx, float cy, float h, float alpha = 1.f);
+
  private:
   struct FontKey {
     int kind, px, bold;
@@ -145,6 +149,9 @@ class Gfx {
   std::unordered_map<std::string, TexEntry> strings_;
   std::map<std::pair<int, uint32_t>, Glyph> glyphs_;  // key: (font id, codepoint)
   std::map<FontKey, int> fontIds_;
+  struct LogoTex { SDL_Texture* tex = nullptr; int w = 0, h = 0; };
+  std::map<int, LogoTex> logos_;  // by pixel height
+  bool logoMissing_ = false;
   std::string monoPath_, headPath_;
 };
 

@@ -122,7 +122,7 @@ class MacWebView : public WebView {
 
       WKWebViewConfiguration* cfg = [WKWebViewConfiguration new];
       cfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-      cfg.applicationNameForUserAgent = @"VolcanoOS/" VOS_VERSION;
+      cfg.applicationNameForUserAgent = @"ZontoVolcano/" VOS_VERSION " VolcanoOS";
       [cfg.preferences setValue:@YES forKey:@"fullScreenEnabled"];
       WKUserScript* script = [[WKUserScript alloc] initWithSource:bridgeScript()
                                                     injectionTime:WKUserScriptInjectionTimeAtDocumentStart

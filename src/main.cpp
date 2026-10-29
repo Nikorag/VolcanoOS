@@ -1,4 +1,4 @@
-// Volcano OS: a controller-first "Big Picture" launcher for Zonto Games.
+// Volcano OS: the controller-first "Big Picture" software for the Zonto Volcano console.
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -13,7 +13,7 @@ using namespace vos;
 
 static void usage() {
   std::puts(
-      "Volcano OS " VOS_VERSION " - Zonto Games launcher\n\n"
+      "Zonto Volcano - Volcano OS " VOS_VERSION " (Zonto Games launcher)\n\n"
       "  --windowed            start in a window instead of fullscreen\n"
       "  --fullscreen          force fullscreen\n"
       "  --size WxH            window size when windowed (default 1600x900)\n"

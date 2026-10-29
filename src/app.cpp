@@ -66,7 +66,7 @@ void App::saveSettings() {
 bool App::initWindow() {
   Uint32 flags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
   if (fullscreen_) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-  win_ = SDL_CreateWindow("Volcano OS", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, opt_.width, opt_.height, flags);
+  win_ = SDL_CreateWindow("Zonto Volcano", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, opt_.width, opt_.height, flags);
   if (!win_) {
     logf("window: %s", SDL_GetError());
     return false;
@@ -520,6 +520,20 @@ void App::loadDemo() {
          "Sing the desert awake. A game about resonance, patience, and very large instruments.", false, "", 0, false, 0,
          0, 14, ""),
   };
+  // Real public artwork, so screenshots exercise text legibility over busy images.
+  const std::string art = "https://storage.googleapis.com/zontohub-game-art/games/";
+  auto setArt = [&](const char* slug, const char* logo, const char* hero) {
+    for (auto& e : g)
+      if (e.slug == slug) {
+        if (*logo) e.logoUrl = art + logo;
+        if (*hero) e.heroUrl = art + hero;
+      }
+  };
+  setArt("carve-the-fate", "carve-the-fate/hd-carve-art.jpg", "carve-the-fate/hd-carve-hero.jpg");
+  setArt("peggy", "peggy/hd-peggy-art.jpg", "peggy/hd-peggy-hero.jpg");
+  setArt("cycic-citizen", "cycic-citizen/hd-cycic-art.jpg", "cycic-citizen/hd-cycic-hero.jpg");
+  setArt("hungry-birds", "hungrybirds/hd-birds-art.jpg", "hungrybirds/hd-birds-hero.jpg");
+  setArt("pine", "pine/hd-pine-art.jpg", "");
   applyLibrary(std::move(g));
   player_.gamertag = "Nikorag";
   player_.level = 14;

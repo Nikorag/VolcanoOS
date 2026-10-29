@@ -497,8 +497,6 @@ bool Pages::handleProfile(Action a) {
 void Pages::hints(PadStyle st, const std::vector<std::pair<Action, std::string>>& items) {
   float x = kMargin, y = 1026;
   for (auto& [a, l] : items) x += ui::prompt(g_, st, a, l, x, y, 22) + 44;
-  x += ui::prompt(g_, st, Action::LB, "", x, y, 22) + 8;
-  x += ui::prompt(g_, st, Action::RB, "TABS", x, y, 22) + 44;
   float w = ui::promptWidth(g_, st, Action::Back, "BACK", 22);
   ui::prompt(g_, st, Action::Back, "BACK", g_.W() - kMargin - w, y, 22);
 }
@@ -605,7 +603,7 @@ void Pages::drawAch(double now, PadStyle st) {
   if (n > arows) {
     g_.text(std::to_string(aSel_ + 1) + " / " + std::to_string(n), rx + rw - 36, top + 36, [] { auto t = mono(14, theme::faint, 2); t.align = Align::Right; return t; }());
   }
-  hints(st, {{Action::Left, ""}, {Action::Y, "REFRESH"}});
+  hints(st, {{Action::Y, "REFRESH"}});
 }
 
 void Pages::drawSocial(double now, PadStyle st) {

@@ -1,6 +1,8 @@
 #include "gfx.hpp"
 
 #include <algorithm>
+#include <SDL_image.h>
+
 #include <cmath>
 
 #include "util.hpp"
@@ -92,6 +94,8 @@ bool Gfx::init(SDL_Window* w, SDL_Renderer* r) {
 void Gfx::shutdown() {
   for (auto& [k, e] : strings_) if (e.tex) SDL_DestroyTexture(e.tex);
   for (auto& [k, g] : glyphs_) if (g.tex) SDL_DestroyTexture(g.tex);
+  for (auto& [k, l] : logos_) if (l.tex) SDL_DestroyTexture(l.tex);
+  logos_.clear();
   for (auto& [k, f] : fonts_) TTF_CloseFont(f);
   strings_.clear();
   glyphs_.clear();
@@ -353,6 +357,37 @@ void Gfx::imageFeather(SDL_Texture* t, int tw, int th, float x, float y, float w
   SDL_SetTextureColorMod(t, 255, 255, 255);
   SDL_SetTextureAlphaMod(t, 255);
   SDL_RenderGeometry(r_, t, v.data(), static_cast<int>(v.size()), idx.data(), static_cast<int>(idx.size()));
+}
+
+float Gfx::logo(float cx, float cy, float h, float alpha) {
+  if (logoMissing_ || alpha <= 0) return 0;
+  int px = std::max(8, static_cast<int>(std::lround(h * scale_)));
+  px = (px + 3) / 4 * 4;  // bucket heights so animations don't re-rasterise every frame
+  auto it = logos_.find(px);
+  if (it == logos_.end()) {
+    LogoTex lt;
+    std::string path = (assetDir() / "logo" / "zonto-volcano.svg").string();
+    if (SDL_RWops* rw = SDL_RWFromFile(path.c_str(), "rb")) {
+      if (SDL_Surface* s = IMG_LoadSizedSVG_RW(rw, 0, px)) {
+        lt.tex = makeTexture(s);
+        lt.w = s->w;
+        lt.h = s->h;
+        SDL_FreeSurface(s);
+      }
+      SDL_RWclose(rw);
+    }
+    if (!lt.tex && logos_.empty()) {
+      logoMissing_ = true;
+      logf("logo not found or not loadable: %s", path.c_str());
+      return 0;
+    }
+    it = logos_.emplace(px, lt).first;
+  }
+  const LogoTex& lt = it->second;
+  if (!lt.tex) return 0;
+  float dw = lt.w / scale_, dh = lt.h / scale_;
+  image(lt.tex, cx - dw / 2, cy - dh / 2, dw, dh, alpha);
+  return dw;
 }
 
 // ---- text -------------------------------------------------------------------

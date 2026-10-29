@@ -1,6 +1,6 @@
-# Volcano OS
+# Zonto Volcano
 
-A controller-first "Big Picture" launcher for [Zonto Games](https://www.nikorag.co.uk), written in C++17 with SDL2.
+**Volcano OS** is the software for the **Zonto Volcano** console: a controller-first "Big Picture" launcher for [Zonto Games](https://www.nikorag.co.uk), written in C++17 with SDL2.
 
 - **Sign in** via OAuth 2.0 + PKCE (loopback redirect, `zonto-launcher` client): your real browser does the login, token goes in the macOS Keychain (0600 file elsewhere).
 - **Library** from `GET /api/library?platform=&arch=`, cached for offline use.
@@ -15,9 +15,9 @@ A controller-first "Big Picture" launcher for [Zonto Games](https://www.nikorag.
 ## Build (macOS)
     brew install sdl2 sdl2_ttf sdl2_image libarchive cmake
     cmake -S . -B build && cmake --build build -j
-    ./build/VolcanoOS            # fullscreen; F11 toggles
-    ./build/VolcanoOS --demo --windowed   # offline fixture library
-    ZONTO_API=http://localhost:3100 ./build/VolcanoOS   # local server
+    ./build/ZontoVolcano            # fullscreen; F11 toggles
+    ./build/ZontoVolcano --demo --windowed   # offline fixture library
+    ZONTO_API=http://localhost:3100 ./build/ZontoVolcano   # local server
 
 Options: `--shot out.png --press right,right,a` renders a scripted demo frame to PNG. See `--help`.
 Fonts: JetBrains Mono and Archivo (OFL) in `assets/fonts`.
