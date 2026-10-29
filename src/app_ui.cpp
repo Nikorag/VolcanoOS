@@ -89,11 +89,34 @@ void App::frame(double now, float dt) {
   gfx_.begin();
 
   if (screen_ == Screen::SignIn) {
+    // Phone (device-code) sign-in.
+    switch (device_.state()) {
+      case DeviceSignIn::State::Done: {
+        Credentials c = device_.credentials();
+        device_.reset();
+        onSignedIn(c);
+        break;
+      }
+      case DeviceSignIn::State::Failed:
+        signInError_ = upper(device_.error());
+        device_.reset();
+        break;
+      case DeviceSignIn::State::Unsupported:  // server without the device flow: use this device's browser
+        device_.reset();
+        startBrowserSignIn();
+        break;
+      case DeviceSignIn::State::Cancelled:
+        device_.reset();
+        break;
+      default:
+        break;
+    }
+    // Browser (authorization code + PKCE) sign-in.
     auto st = signin_.state();
     if (st == SignInFlow::State::Done) {
-      std::string tok = signin_.token();
+      Credentials c = signin_.credentials();
       signin_.cancel();
-      onSignedIn(tok);
+      onSignedIn(c);
     } else if (st == SignInFlow::State::Failed) {
       signInError_ = upper(signin_.error());
       signin_.cancel();
@@ -108,6 +131,7 @@ void App::frame(double now, float dt) {
       case Screen::SignIn: drawSignIn(now); break;
       case Screen::Home: drawHome(now, dt); break;
       case Screen::Pages: drawPages(now); break;
+      case Screen::System: drawSystem(now); break;
     }
   }
   renderOverlay(now);
@@ -158,7 +182,88 @@ void App::drawBoot(double now) {
   }
 }
 
+void App::drawDeviceSignIn(double now) {
+  bg_.draw(gfx_, now, 0.05f);
+  const float W = gfx_.W(), H = gfx_.H();
+  drawMark(W / 2, H * 0.115f, 56, now);
+  wordmark(gfx_, W / 2, H * 0.165f, 54, now, false);
+
+  const auto code = device_.code();
+  const bool ready = device_.state() == DeviceSignIn::State::Waiting && !code.userCode.empty();
+  const float pw = 1120, ph = 520, px = W / 2 - pw / 2, py = H * 0.30f;
+  gfx_.rrect(px, py, pw, ph, 10, Color(14, 11, 10, 220));
+  gfx_.rrectLine(px, py, pw, ph, 10, 1.5f, theme::line);
+  ui::cornerTicks(gfx_, px - 6, py - 6, pw + 12, ph + 12, 22, 2, theme::magma.alpha(0.7f));
+
+  const PadStyle ps = input_.style();
+  const float hintY = py + ph - 56;
+  float hx = px + 60;
+  hx += ui::prompt(gfx_, ps, Action::Back, "CANCEL", hx, hintY, 22) + 48;
+
+  if (!ready) {
+    gfx_.arc(W / 2, py + ph / 2 - 20, 24, 4, static_cast<float>(now) * 4, static_cast<float>(now) * 4 + 4.2f, theme::magma);
+    TextStyle t = head(26, theme::text, 5);
+    t.align = Align::Center;
+    gfx_.text("GETTING YOUR CODE", W / 2, py + ph / 2 + 24, t);
+  } else {
+    ui::prompt(gfx_, ps, Action::Y, "USE THIS DEVICE'S BROWSER", hx, hintY, 22);
+
+    // QR of the prefilled verification URL, 1 px per module so scaling stays crisp.
+    if (code.verificationUrlComplete != qrFor_) {
+      if (qrTex_) SDL_DestroyTexture(qrTex_);
+      qrTex_ = nullptr;
+      qrFor_ = code.verificationUrlComplete;
+      QrCode q = encodeQr(qrFor_, true);
+      if (q.size == 0) q = encodeQr(qrFor_, false);
+      if (q.size > 0) {
+        const int quiet = 4, n = q.size + quiet * 2;
+        if (SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, n, n, 32, SDL_PIXELFORMAT_RGBA32)) {
+          SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 255, 255, 255, 255));
+          const Uint32 black = SDL_MapRGBA(s->format, 0, 0, 0, 255);
+          for (int y = 0; y < q.size; ++y)
+            for (int x = 0; x < q.size; ++x)
+              if (q.dark(x, y)) static_cast<Uint32*>(s->pixels)[(y + quiet) * (s->pitch / 4) + (x + quiet)] = black;
+          qrTex_ = gfx_.makeTexture(s);
+          if (qrTex_) SDL_SetTextureScaleMode(qrTex_, SDL_ScaleModeNearest);
+          SDL_FreeSurface(s);
+        }
+      }
+    }
+    const float qs = 380, qx = px + 60, qy = py + 54;
+    gfx_.rrect(qx - 6, qy - 6, qs + 12, qs + 12, 8, Color(255, 255, 255, 255));
+    if (qrTex_) gfx_.image(qrTex_, qx, qy, qs, qs);
+
+    const float rx = qx + qs + 60, rw = px + pw - 60 - rx;
+    gfx_.text("SIGN IN ON YOUR PHONE", rx, py + 54, head(30, theme::text, 4));
+    gfx_.text("SCAN THE CODE, OR GO TO", rx, py + 122, mono(14, theme::faint, 3));
+    std::string url = code.verificationUrl;
+    if (url.rfind("https://", 0) == 0) url = url.substr(8);
+    TextStyle us = mono(22, theme::ember, 1);
+    gfx_.text(gfx_.ellipsize(url, us, rw), rx, py + 148, us);
+    gfx_.text("AND ENTER THIS CODE", rx, py + 214, mono(14, theme::faint, 3));
+    TextStyle cs = head(72, theme::text, 8);
+    gfx_.glow(rx + 150, py + 280, 260, 60, theme::magma.alpha(0.10f));
+    gfx_.text(code.userCode, rx, py + 238, cs);
+
+    const double left = code.expiresAt - now;
+    char buf[48];
+    if (left > 0) std::snprintf(buf, sizeof buf, "CODE EXPIRES IN %d:%02d", static_cast<int>(left) / 60, static_cast<int>(left) % 60);
+    else std::snprintf(buf, sizeof buf, "GETTING A NEW CODE");
+    gfx_.text(buf, rx, py + 346, mono(14, theme::faint, 3));
+    gfx_.arc(rx + 10, py + 410, 10, 3, static_cast<float>(now) * 4, static_cast<float>(now) * 4 + 4.2f, theme::magma);
+    gfx_.text("WAITING FOR APPROVAL", rx + 34, py + 400, mono(15, theme::dim, 3));
+  }
+
+  gfx_.rect(kMargin, H - 74, W - kMargin * 2, 1, theme::line.alpha(0.6f));
+  gfx_.text("WWW.NIKORAG.CO.UK", kMargin, H - 52, mono(14, theme::faint, 3));
+  float w = ui::promptWidth(gfx_, ps, Action::Start, "NETWORK & MENU", 22);
+  ui::prompt(gfx_, ps, Action::Start, "NETWORK & MENU", W - kMargin - w, H - 56, 22);
+}
+
 void App::drawSignIn(double now) {
+  const auto ds = device_.state();
+  if (ds == DeviceSignIn::State::Starting || ds == DeviceSignIn::State::Waiting) return drawDeviceSignIn(now);
+
   bg_.draw(gfx_, now, 0.05f);
   float W = gfx_.W(), H = gfx_.H();
   drawMark(W / 2, H * 0.26f, 90, now);
@@ -166,7 +271,7 @@ void App::drawSignIn(double now) {
 
   auto st = signin_.state();
   float py = H * 0.62f;
-  float pw = 760, ph = 230, px = W / 2 - pw / 2;
+  float pw = 760, ph = 270, px = W / 2 - pw / 2;
   gfx_.rrect(px, py, pw, ph, 10, Color(14, 11, 10, 220));
   gfx_.rrectLine(px, py, pw, ph, 10, 1.5f, theme::line);
   ui::cornerTicks(gfx_, px - 6, py - 6, pw + 12, ph + 12, 22, 2, theme::magma.alpha(0.7f));
@@ -198,10 +303,18 @@ void App::drawSignIn(double now) {
       sub.color = theme::err;
       gfx_.text(signInError_, W / 2, py + 84, sub);
     } else {
-      gfx_.text("Your browser handles the login, so Google sign-in just works.", W / 2, py + 84, sub);
+      gfx_.text("Scan a code with your phone. No keyboard needed.", W / 2, py + 84, sub);
     }
-    ui::button(gfx_, W / 2 - 190, py + 124, 380, 66, api_.hasToken() ? "TRY AGAIN" : "SIGN IN", theme::magma, true, now);
-    ui::prompt(gfx_, input_.style(), Action::Accept, "", W / 2 - 170, py + 124 + 33 - 12, 22);
+    // Button sized to its label (as on Home), with no key glyph drawn over it: the keys are listed below.
+    const std::string label = api_.hasToken() ? "TRY AGAIN" : "SIGN IN WITH YOUR PHONE";
+    const float bw = std::max(380.f, 120.f + gfx_.measure(label, head(66 * 0.40f, theme::text, 4)).x);
+    ui::button(gfx_, W / 2 - bw / 2, py + 124, bw, 66, label, theme::magma, true, now);
+    std::vector<std::pair<Action, std::string>> keys = {{Action::Accept, api_.hasToken() ? "TRY AGAIN" : "SIGN IN"}};
+    if (!api_.hasToken()) keys.push_back({Action::Y, "USE THIS DEVICE'S BROWSER"});
+    float total = 0;
+    for (auto& k : keys) total += ui::promptWidth(gfx_, input_.style(), k.first, k.second, 20) + 44;
+    float kx = W / 2 - (total - 44) / 2;
+    for (auto& k : keys) kx += ui::prompt(gfx_, input_.style(), k.first, k.second, kx, py + 214, 20) + 44;
   }
 
   // Footer.
@@ -209,8 +322,8 @@ void App::drawSignIn(double now) {
   TextStyle f = mono(14, theme::faint, 3);
   gfx_.text("WWW.NIKORAG.CO.UK", kMargin, H - 52, f);
   float x = W - kMargin;
-  float w = ui::promptWidth(gfx_, input_.style(), Action::Start, "MENU", 22);
-  ui::prompt(gfx_, input_.style(), Action::Start, "MENU", x - w, H - 56, 22);
+  float w = ui::promptWidth(gfx_, input_.style(), Action::Start, "NETWORK & MENU", 22);
+  ui::prompt(gfx_, input_.style(), Action::Start, "NETWORK & MENU", x - w, H - 56, 22);
 }
 
 // ---- home ----------------------------------------------------------------------------
@@ -264,10 +377,11 @@ void App::drawTopBar(double now) {
 
   // Tabs with shoulder glyphs: library filters on Home, pages elsewhere.
   const bool onPages = screen_ == Screen::Pages;
+  const bool onSystem = screen_ == Screen::System;
   const char* labels[3] = {"ALL", "INSTALLED", "WEB"};
-  if (onPages)
-    for (int i = 0; i < 3; ++i) labels[i] = Pages::label(i);
-  const int activeTab = onPages ? static_cast<int>(pages_->tab()) : static_cast<int>(filter_);
+  if (onPages || onSystem)
+    for (int i = 0; i < 3; ++i) labels[i] = onSystem ? SystemPages::label(i) : Pages::label(i);
+  const int activeTab = onSystem ? static_cast<int>(sys_->tab()) : onPages ? static_cast<int>(pages_->tab()) : static_cast<int>(filter_);
   const PadStyle ps = input_.style();
 
   auto tabs = [&](bool draw) {
@@ -339,6 +453,13 @@ void App::drawTopBar(double now) {
   };
   pill(cluster(false) - 22, W - kMargin + 16);
   cluster(true);
+}
+
+void App::drawSystem(double now) {
+  bg_.draw(gfx_, now, 0.62f);
+  sys_->update(now);
+  drawTopBar(now);
+  sys_->draw(now, input_.style());
 }
 
 void App::drawPages(double now) {
@@ -649,6 +770,7 @@ void App::drawMenu(double now) {
   const float W = gfx_.W(), H = gfx_.H();
   float k = ui::easeOut(static_cast<float>((now - menu_.openedAt) / 0.18));
   gfx_.rect(0, 0, W, H, Color(4, 3, 3, static_cast<uint8_t>(185 * k)));
+  gfx_.lintOcclude();
 
   const float pw = 720;
   const float rowH = 76;

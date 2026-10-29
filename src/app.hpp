@@ -14,15 +14,19 @@
 #include "api.hpp"
 #include "art.hpp"
 #include "auth.hpp"
+#include "auth_device.hpp"
 #include "bridge.hpp"
 #include "background.hpp"
 #include "gfx.hpp"
 #include "input.hpp"
 #include "installer.hpp"
+#include "netctl.hpp"
 #include "osk.hpp"
+#include "qr.hpp"
 #include "overlay.hpp"
 #include "pages.hpp"
 #include "runner.hpp"
+#include "system_pages.hpp"
 #include "util.hpp"
 #include "webview.hpp"
 
@@ -32,6 +36,7 @@ struct Options {
   bool demo = false;          // offline fixture library, fake installs
   bool windowed = false;
   bool fullscreen = false;    // force fullscreen even if settings say otherwise
+  bool lint = false;          // --ui-lint: exit non-zero if any prompt overlaps text/buttons (see Gfx::lintBox)
   int width = 1600, height = 900;
   std::string shotPath;       // render N frames, write a PNG, exit
   int shotFrame = 150;
@@ -48,7 +53,7 @@ class App {
 
  private:
   // ---- types --------------------------------------------------------------
-  enum class Screen { Boot, SignIn, Home, Pages };
+  enum class Screen { Boot, SignIn, Home, Pages, System };
   enum class Kind { Install, Update, Play, PlayWeb, Installing, Running, Unavailable };
   struct Primary {
     Kind kind;
@@ -92,8 +97,9 @@ class App {
   void handleAction(Action a);
 
   // ---- account / library ------------------------------------------------------
-  void startSignIn();
-  void onSignedIn(const std::string& token);
+  void startSignIn();         // phone sign-in (device code); falls back to the browser flow
+  void startBrowserSignIn();
+  void onSignedIn(const Credentials& creds);
   void resolveAccount();
   void signOut();
   void refreshLibrary(bool quiet);
@@ -116,9 +122,11 @@ class App {
   // ---- ui -------------------------------------------------------------------------
   void drawBoot(double now);
   void drawSignIn(double now);
+  void drawDeviceSignIn(double now);
   void drawHome(double now, float dt);
   void drawTopBar(double now);
   void drawPages(double now);
+  void drawSystem(double now);
   void drawHero(const GameEntry* g, double now);
   void drawInfo(const GameEntry* g, double now);
   void drawShelf(double now, float dt);
@@ -134,6 +142,9 @@ class App {
   void openGameMenu();
   void openSystemMenu();
   void openPage(PageTab t);
+  void openSystem(SysTab t);
+  void closeSystem();
+  void checkFirstRunNetwork();
   void openConfirm(const std::string& title, const std::string& msg, const std::string& okLabel,
                    std::function<void()> onOk);
   void closeMenu() { menu_.open = false; }
@@ -165,14 +176,21 @@ class App {
   Gfx gfx_;
   Input input_;
   MainQueue main_;
+  std::unique_ptr<NetCtl> netctl_;  // declared before pool_ so queued jobs never outlive it
   std::unique_ptr<Pool> pool_;
   Api api_;
   std::unique_ptr<Installer> installer_;
   std::unique_ptr<Art> art_;
   std::unique_ptr<Pages> pages_;
+  std::unique_ptr<SystemPages> sys_;
+  Screen sysReturn_ = Screen::Home;  // where Back from the system screen goes
   Osk osk_;
   Background bg_;
   SignInFlow signin_;
+  DeviceSignIn device_;
+  SDL_Texture* qrTex_ = nullptr;  // QR of the current verification URL, 1 px per module
+  int qrSize_ = 0;
+  std::string qrFor_;
   std::unique_ptr<WebView> web_;
   GameProcess proc_;
 

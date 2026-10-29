@@ -44,6 +44,17 @@ Same fields plus `description` (plain text or constrained Markdown), `screenshot
     `/api/store/checkout/capture` does today must run server-side on PayPal's return redirect
     (or webhook) rather than from the browser.
 
+## 1b. Controller-only sign-in (done)
+
+Built on the server and used by the launcher: OAuth 2.0 device authorization grant
+(RFC 8628). `POST /api/oauth/device` returns `{ deviceCode, userCode, verificationUrl,
+verificationUrlComplete, expiresIn, interval }`; the launcher shows the code and a QR of
+`verificationUrlComplete`, polls `POST /api/oauth/token` with the device-code grant, and
+receives `{ access_token, refresh_token, expires_in, player }`. Access tokens last 1 hour;
+refresh tokens rotate on every use (`grant_type: "refresh_token"`) and last 60 days.
+
+Still open on the server: signing out or deleting a device does not revoke refresh tokens.
+
 ## 2. Nice to have
 
 - **Player search / profiles:** `GET /api/players/[gamertag]` (public stats, level, mutual games)

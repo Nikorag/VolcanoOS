@@ -104,7 +104,25 @@ void Gfx::shutdown() {
   glowTex_ = nullptr;
 }
 
+void Gfx::lintFail(const std::string& msg) {
+  if (lintSeen_.insert(msg).second) logf("UI LINT: %s", msg.c_str());
+}
+
+void Gfx::lintBox(Box kind, float x, float y, float w, float h, const std::string& what) {
+  if (!lint_ || lintMute_ > 0 || w <= 0 || h <= 0) return;
+  auto name = [](Box k) { return k == Box::Prompt ? "prompt" : k == Box::Button ? "button" : "text"; };
+  const float tol = 2.f;  // touching edges are fine; actual overlap is not
+  for (const LintBox& b : lintBoxes_) {
+    if (kind != Box::Prompt && b.kind != Box::Prompt) continue;  // only prompts are policed against others
+    if (x < b.x + b.w - tol && b.x < x + w - tol && y < b.y + b.h - tol && b.y < y + h - tol) {
+      lintFail(std::string(name(kind)) + " '" + what + "' overlaps " + name(b.kind) + " '" + b.what + "'");
+    }
+  }
+  lintBoxes_.push_back({kind, x, y, w, h, what});
+}
+
 void Gfx::begin(Color clear) {
+  lintBoxes_.clear();
   int ow = 0, oh = 0;
   SDL_GetRendererOutputSize(r_, &ow, &oh);
   if (oh < 1) oh = 1;
@@ -502,6 +520,19 @@ Vec2 Gfx::text(const std::string& s, float x, float y, const TextStyle& st) {
   if (s.empty() || st.color.a == 0) return {};
   TTF_Font* f = font(st);
   if (!f) return {};
+  if (lint_ && lintMute_ == 0) {
+    Vec2 lm = measure(s, st);
+    float bx = x, bw = lm.x;
+    if (st.wrap > 0) {
+      bw = st.wrap;
+      bx = st.align == Align::Center ? x - st.wrap / 2 : st.align == Align::Right ? x - st.wrap : x;
+    } else if (st.align == Align::Center) {
+      bx = x - lm.x / 2;
+    } else if (st.align == Align::Right) {
+      bx = x - lm.x;
+    }
+    lintBox(Box::Text, bx, y, bw, lm.y, s.substr(0, 40));
+  }
   int px = std::max(6, static_cast<int>(std::lround(st.size * scale_)));
   FontKey fk{static_cast<int>(st.font), px, st.bold ? 1 : 0};
 
@@ -510,7 +541,9 @@ Vec2 Gfx::text(const std::string& s, float x, float y, const TextStyle& st) {
       TTF_SetFontWrappedAlign(f, st.align == Align::Center ? TTF_WRAPPED_ALIGN_CENTER
                                   : st.align == Align::Right ? TTF_WRAPPED_ALIGN_RIGHT
                                                              : TTF_WRAPPED_ALIGN_LEFT);
+#if SDL_TTF_VERSION_ATLEAST(2, 24, 0)  // Debian bookworm ships 2.20: keep the font's own line spacing there
       TTF_SetFontLineSkip(f, static_cast<int>(std::lround(px * st.lineHeight * 1.15f)));
+#endif
     }
     TexEntry* e = stringTex(f, fk, s, st.wrap > 0 ? static_cast<int>(st.wrap * scale_) : 0);
     if (!e->tex) return {};

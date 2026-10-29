@@ -9,6 +9,8 @@
 #include <string>
 #include <thread>
 
+#include "api.hpp"
+
 namespace vos {
 
 class SignInFlow {
@@ -21,8 +23,9 @@ class SignInFlow {
 
   State state() const { return state_.load(); }
   std::string authorizeUrl() const;
-  std::string token() const;  // valid once Done
-  std::string error() const;  // valid once Failed
+  std::string token() const;         // valid once Done
+  Credentials credentials() const;   // valid once Done: access + refresh token + expiry
+  std::string error() const;         // valid once Failed
 
  private:
   void run(std::string base);
@@ -33,6 +36,7 @@ class SignInFlow {
   std::thread thread_;
   mutable std::mutex m_;
   std::string url_, token_, error_;
+  Credentials creds_;
 };
 
 }  // namespace vos

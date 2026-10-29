@@ -171,16 +171,22 @@ float promptWidth(Gfx& g, PadStyle style, Action a, const std::string& label, fl
 }
 
 float prompt(Gfx& g, PadStyle style, Action a, const std::string& label, float x, float y, float size, float alpha) {
+  g.lintMute(1);  // the glyph's and label's inner text count as one prompt box, registered below
   float w = glyph(g, style, a, x, y, size, alpha, true);
-  if (label.empty()) return w;
-  TextStyle ts;
-  ts.size = size * 0.78f;
-  ts.tracking = 2.4f;
-  ts.color = theme::dim.alpha(alpha);
-  float gh = size * 1.15f;
-  Vec2 m = g.measure(label, ts);
-  g.text(label, x + w + size * 0.5f, y + (gh - m.y) / 2, ts);
-  return w + size * 0.5f + m.x;
+  float total = w;
+  const float gh = size * 1.15f;
+  if (!label.empty()) {
+    TextStyle ts;
+    ts.size = size * 0.78f;
+    ts.tracking = 2.4f;
+    ts.color = theme::dim.alpha(alpha);
+    Vec2 m = g.measure(label, ts);
+    g.text(label, x + w + size * 0.5f, y + (gh - m.y) / 2, ts);
+    total = w + size * 0.5f + m.x;
+  }
+  g.lintMute(-1);
+  g.lintBox(Gfx::Box::Prompt, x, y, total, gh, label.empty() ? "(key)" : label);
+  return total;
 }
 
 float chip(Gfx& g, const std::string& text, float x, float y, Color fg, Color border, float size, Color fill) {
@@ -223,7 +229,11 @@ void button(Gfx& g, float x, float y, float w, float h, const std::string& label
   ts.align = Align::Center;
   ts.color = enabled ? Color(20, 10, 6) : theme::faint;
   Vec2 m = g.measure(label, ts);
+  g.lintMute(1);
   g.text(label, x + w / 2, y + (h - m.y) / 2, ts);
+  g.lintMute(-1);
+  if (g.lintOn() && m.x > w - 24) g.lintFail("button '" + label + "' is wider than its button (" + std::to_string(static_cast<int>(m.x)) + " > " + std::to_string(static_cast<int>(w)) + ")");
+  g.lintBox(Gfx::Box::Button, x, y, w, h, label);
 }
 
 void placeholder(Gfx& g, float x, float y, float w, float h, const std::string& name, float alpha) {

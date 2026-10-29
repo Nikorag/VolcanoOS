@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <tuple>
 #include <string>
 #include <unordered_map>
@@ -112,6 +113,22 @@ class Gfx {
   Vec2 measure(const std::string& s, const TextStyle& st);
   std::string ellipsize(const std::string& s, const TextStyle& st, float maxW);
 
+  // ---- layout lint (--ui-lint) ----------------------------------------------------------
+  // The rule: a key prompt never sits on top of text, a button or another prompt, and a
+  // button's label always fits inside it. Text runs, prompts and buttons register their
+  // bounds here each frame; a violation is logged once and counted, so any screen that
+  // breaks the rule fails `tools/ui-lint.sh` instead of waiting to be spotted by eye.
+  enum class Box { Text, Prompt, Button };
+  void lintEnable(bool on) { lint_ = on; }
+  bool lintOn() const { return lint_; }
+  int lintViolations() const { return static_cast<int>(lintSeen_.size()); }
+  void lintBox(Box kind, float x, float y, float w, float h, const std::string& what);
+  void lintFail(const std::string& msg);
+  void lintMute(int delta) { lintMute_ += delta; }  // widgets mute their own inner text while drawing
+  // A modal (menu, keyboard) that covers the screen calls this once it has drawn its scrim:
+  // what was drawn beneath is hidden, so it no longer counts against the modal's own prompts.
+  void lintOcclude() { lintBoxes_.clear(); }
+
   SDL_Texture* makeTexture(SDL_Surface* s);  // takes no ownership of the surface
 
   // The Zonto Volcano mark (assets/logo/zonto-volcano.svg), rasterised crisply at
@@ -153,6 +170,12 @@ class Gfx {
   std::map<int, LogoTex> logos_;  // by pixel height
   bool logoMissing_ = false;
   std::string monoPath_, headPath_;
+
+  struct LintBox { Box kind; float x, y, w, h; std::string what; };
+  bool lint_ = false;
+  int lintMute_ = 0;
+  std::vector<LintBox> lintBoxes_;
+  std::set<std::string> lintSeen_;
 };
 
 }  // namespace vos

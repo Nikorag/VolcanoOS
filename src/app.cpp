@@ -78,6 +78,7 @@ bool App::initWindow() {
     return false;
   }
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+  gfx_.lintEnable(opt_.lint);
   return gfx_.init(win_, ren_);
 }
 
@@ -91,6 +92,11 @@ int App::run() {
   httpGlobalInit();
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
   SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");  // instant, no Spaces animation
+#ifdef __linux__
+  // Under the console's kiosk compositor (cage) we're a Wayland client. A hint, not
+  // SDL_VIDEODRIVER in the environment, so games we launch still choose for themselves.
+  if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("WAYLAND_DISPLAY")) SDL_SetHint(SDL_HINT_VIDEODRIVER, "wayland,x11");
+#endif
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
     logf("SDL_Init: %s", SDL_GetError());
     return 1;
@@ -103,6 +109,17 @@ int App::run() {
   SDL_DisableScreenSaver();  // a launcher on a TV shouldn't blank mid-menu
 
   pool_ = std::make_unique<Pool>(4);
+  // Access tokens last ~1h and refresh tokens rotate: persist each new pair before it's used,
+  // and when the server rejects the refresh token, send the player back to sign-in.
+  api_.onCredentials = [](const Credentials& c) {
+    if (!tokenstore::save(c.serialize())) logf("could not persist refreshed credentials");
+  };
+  api_.onSessionLost = [this] {
+    main_.post([this] {
+      signOut();
+      signInError_ = "YOUR SIGN-IN EXPIRED. SIGN IN AGAIN.";
+    });
+  };
   installer_ = std::make_unique<Installer>(api_, main_);
   installer_->setDemo(opt_.demo);
   loadSettings();
@@ -124,6 +141,19 @@ int App::run() {
   };
   hooks.tick = [this] { input_.tick(0.1f, 12); };
   pages_ = std::make_unique<Pages>(gfx_, api_, *pool_, main_, std::move(hooks));
+  netctl_ = createNetCtl(opt_.demo);
+  SystemPages::Hooks sh;
+  sh.toast = [this](const std::string& t, Color c) { toast(t, c, 5); };
+  sh.text = [this](const std::string& title, const std::string& init, size_t max, std::function<void(const std::string&)> done) {
+    osk_.show(title, init, max, std::move(done));
+    SDL_StartTextInput();
+  };
+  sh.confirm = [this](const std::string& t, const std::string& m, const std::string& ok, std::function<void()> fn) {
+    openConfirm(t, m, ok, std::move(fn));
+  };
+  sh.tick = [this] { input_.tick(0.1f, 12); };
+  sh.padCount = [this] { return input_.padCount(); };
+  sys_ = std::make_unique<SystemPages>(gfx_, *netctl_, *pool_, main_, std::move(sh));
   bg_.init();
   input_.init();
   web_ = createWebView();
@@ -234,6 +264,9 @@ int App::run() {
 
   // ---- teardown ----------------------------------------------------------------
   signin_.cancel();
+  device_.cancel();
+  if (qrTex_) SDL_DestroyTexture(qrTex_);
+  qrTex_ = nullptr;
   bridge_.reset();
   if (overlayWin_) overlayWin_->show(false);
   if (web_ && web_->isOpen()) web_->close();
@@ -241,6 +274,8 @@ int App::run() {
     api_.presence(std::nullopt);  // don't leave "now playing" behind
   }
   installer_.reset();
+  netctlShutdown();  // cancel any scan/connect so the pool can drain
+  sys_.reset();
   pages_.reset();
   shutdownOverlay();
   art_.reset();
@@ -253,6 +288,10 @@ int App::run() {
   TTF_Quit();
   SDL_Quit();
   httpGlobalCleanup();
+  if (opt_.lint && gfx_.lintViolations() > 0) {
+    logf("UI LINT: %d violation(s)", gfx_.lintViolations());
+    return 3;
+  }
   return 0;
 }
 
@@ -274,20 +313,25 @@ void App::boot() {
   screenSince_ = nowSeconds();
   if (opt_.demo) {
     loadDemo();
-    screen_ = opt_.screen == "signin" ? Screen::SignIn : Screen::Home;
+    screen_ = (opt_.screen == "signin" || opt_.screen == "signin-phone") ? Screen::SignIn : Screen::Home;
+    if (opt_.screen == "signin-phone") startSignIn();  // demo: fixture code, no network
     pages_->loadDemo();
     if (opt_.screen == "system") openSystemMenu();
     if (opt_.screen == "achievements") openPage(PageTab::Achievements);
     if (opt_.screen == "social") openPage(PageTab::Social);
     if (opt_.screen == "profile") openPage(PageTab::Profile);
+    if (opt_.screen == "wifi") openSystem(SysTab::Wifi);
+    if (opt_.screen == "bluetooth") openSystem(SysTab::Bluetooth);
+    if (opt_.screen == "about") openSystem(SysTab::About);
     return;
   }
   auto tok = tokenstore::load();
   if (!tok) {
     screen_ = Screen::SignIn;
+    checkFirstRunNetwork();
     return;
   }
-  api_.setToken(*tok);
+  api_.setCredentials(Credentials::parse(*tok));
   bootStatus_ = "CONNECTING";
   resolveAccount();
 }
@@ -341,14 +385,30 @@ void App::resolveAccount() {
       });
 }
 
+static std::string deviceName() {
+  std::string n = "Zonto Volcano";
+#ifndef _WIN32
+  char host[128] = {};
+  if (gethostname(host, sizeof host - 1) == 0 && host[0]) n += std::string(" (") + host + ")";
+#endif
+  return n;
+}
+
 void App::startSignIn() {
   signInError_.clear();
+  if (opt_.demo) return device_.startDemo();
+  device_.start(api_.base(), deviceName());
+}
+
+void App::startBrowserSignIn() {
+  signInError_.clear();
+  device_.reset();
   signin_.start(api_.base());
 }
 
-void App::onSignedIn(const std::string& token) {
-  tokenstore::save(token);
-  api_.setToken(token);
+void App::onSignedIn(const Credentials& creds) {
+  tokenstore::save(creds.serialize());
+  api_.setCredentials(creds);
   resolveAccount();
 }
 
@@ -761,11 +821,18 @@ void App::handleAction(Action a) {
   }
 
   if (screen_ == Screen::SignIn) {
+    const auto ds = device_.state();
+    const bool phoneBusy = ds == DeviceSignIn::State::Starting || ds == DeviceSignIn::State::Waiting;
+    const bool browserBusy = signin_.state() == SignInFlow::State::Waiting || signin_.state() == SignInFlow::State::Exchanging;
     if (a == Action::Accept) {
-      if (signin_.state() == SignInFlow::State::Waiting || signInBusy_) return;
+      if (phoneBusy || browserBusy || signInBusy_) return;
       if (api_.hasToken()) resolveAccount();  // offline retry
       else startSignIn();
+    } else if (a == Action::Y) {
+      // Same sign-in through this device's own browser (needs a keyboard or mouse).
+      if (!phoneBusy && !browserBusy && !signInBusy_ && !api_.hasToken()) startBrowserSignIn();
     } else if (a == Action::Back) {
+      if (phoneBusy) device_.cancel();
       if (signin_.state() == SignInFlow::State::Waiting) signin_.cancel();
     } else if (a == Action::Start || a == Action::Home) {
       openSystemMenu();
@@ -777,6 +844,10 @@ void App::handleAction(Action a) {
       screen_ = Screen::Home;
       screenSince_ = nowSeconds();
     }
+    return;
+  }
+  if (screen_ == Screen::System) {
+    if (sys_->handle(a)) closeSystem();
     return;
   }
   if (screen_ != Screen::Home) return;
@@ -900,12 +971,40 @@ void App::openPage(PageTab t) {
   screenSince_ = nowSeconds();
 }
 
+void App::openSystem(SysTab t) {
+  if (screen_ != Screen::System) sysReturn_ = screen_;
+  sys_->open(t);
+  screen_ = Screen::System;
+  screenSince_ = nowSeconds();
+}
+
+void App::closeSystem() {
+  screen_ = sysReturn_;
+  screenSince_ = nowSeconds();
+  // Came here because we were offline: now that the network may be back, try again.
+  if (screen_ == Screen::Home && offline_ && api_.hasToken() && !opt_.demo) refreshLibrary(true);
+}
+
+// First boot of a fresh image has no saved Wi-Fi and (usually) no keyboard, so
+// jump straight to the Wi-Fi screen instead of a sign-in that cannot work.
+void App::checkFirstRunNetwork() {
+  if (opt_.demo || std::string(netctl_->name()) == "none") return;
+  pool_->run<NetStatus>(
+      main_, [this] { return netctl_->status(); },
+      [this](NetStatus s) {
+        if (!s.supported || !s.wifiPresent || s.online || s.knownWifi > 0) return;
+        if (screen_ != Screen::SignIn) return;
+        toast("CONNECT TO WI-FI TO SIGN IN", theme::warn, 8);
+        openSystem(SysTab::Wifi);
+      });
+}
+
 void App::openSystemMenu() {
   menu_ = Menu{};
   menu_.open = true;
   menu_.title = "VOLCANO OS";
   menu_.openedAt = nowSeconds();
-  enum { Achievements = 1, Social, Profile, Refresh, Fullscreen, SignOut, Quit };
+  enum { Achievements = 1, Social, Profile, Refresh, Network, Bluetooth, Fullscreen, SignOut, Quit };
   bool in = screen_ == Screen::Home;
   if (in) {
     menu_.items.push_back({"ACHIEVEMENTS", "Everything you've unlocked", Achievements, !offline_ || opt_.demo});
@@ -913,6 +1012,9 @@ void App::openSystemMenu() {
     menu_.items.push_back({"PROFILE", "Your stats, privacy and devices", Profile, !offline_ || opt_.demo});
     menu_.items.push_back({"REFRESH LIBRARY", "", Refresh, !offline_});
   }
+  // Always offered, including on the sign-in screen: with no network there is nothing else to do.
+  menu_.items.push_back({"NETWORK", "Wi-Fi and Ethernet", Network});
+  menu_.items.push_back({"BLUETOOTH", "Controllers and other devices", Bluetooth});
   menu_.items.push_back({fullscreen_ ? "SWITCH TO WINDOWED" : "SWITCH TO FULLSCREEN", "F11", Fullscreen});
   if (in) menu_.items.push_back({"SIGN OUT", player_.gamertag.empty() ? "" : "Signed in as " + player_.gamertag, SignOut, true, true});
   menu_.items.push_back({"QUIT VOLCANO OS", "", Quit});
@@ -923,6 +1025,8 @@ void App::openSystemMenu() {
       case Social: openPage(PageTab::Social); break;
       case Profile: openPage(PageTab::Profile); break;
       case Refresh: refreshLibrary(false); break;
+      case Network: openSystem(SysTab::Wifi); break;
+      case Bluetooth: openSystem(SysTab::Bluetooth); break;
       case Fullscreen: setFullscreen(!fullscreen_); break;
       case SignOut: signOut(); break;
       case Quit: running_ = false; break;

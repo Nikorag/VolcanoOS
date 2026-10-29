@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs inside the cage compositor. When the launcher exits cage exits and
+# systemd restarts the whole thing.
+export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
+exec /opt/volcano/bin/ZontoVolcano --fullscreen

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -56,13 +57,33 @@ struct LaunchInfo {
 // so the install loop can be exercised against another target in development.
 std::pair<std::string, std::string> buildTarget();
 
+// What a sign-in yields. Access tokens last about an hour; the refresh token
+// (single use, rotated on every refresh) keeps the console signed in for as long
+// as it is used at least once every ~60 days. `refresh` is empty for legacy
+// tokens, and `expiresAt` (unix seconds) is 0 when unknown.
+struct Credentials {
+  std::string access, refresh;
+  int64_t expiresAt = 0;
+  bool empty() const { return access.empty(); }
+  std::string serialize() const;                        // what goes in the keychain/token file
+  static Credentials parse(const std::string& stored);  // also accepts a bare legacy access token
+};
+
 class Api {
  public:
   Api();
   const std::string& base() const { return base_; }
-  void setToken(std::string t);
+  void setToken(std::string t) { setCredentials(Credentials{std::move(t), {}, 0}); }  // "" signs out
+  void setCredentials(Credentials c);
   std::string token() const;
   bool hasToken() const { return !token().empty(); }
+
+  // Persist rotated credentials. Called, before the new access token is used,
+  // from whichever worker thread triggered the refresh.
+  std::function<void(const Credentials&)> onCredentials;
+  // The refresh token was rejected (expired, revoked, replayed): the player must sign in again.
+  // Called from a worker thread.
+  std::function<void()> onSessionLost;
 
   Result<Player> me() const;
   // `raw` receives the response body so the caller can cache it for offline use.
@@ -78,13 +99,18 @@ class Api {
   Result<std::string> request(const char* method, const std::string& path, const std::string& jsonBody = {}) const;
 
  private:
+  void storeCredentials(Credentials c) const;
+  bool refreshTokens(const std::string& staleAccess) const;
+  void ensureFresh() const;
   HttpResponse call(const char* method, const std::string& path, const std::string& body = {}) const;
   template <class T>
   static Result<T> failure(const HttpResponse& r, const std::string& what);
 
   std::string base_;
   mutable std::mutex m_;
-  std::string token_;
+  mutable Credentials creds_;
+  mutable std::mutex refreshM_;       // one refresh at a time: tokens are single-use
+  mutable double nextRefreshAt_ = 0;  // back-off after a refresh whose outcome is unknown
 };
 
 }  // namespace vos

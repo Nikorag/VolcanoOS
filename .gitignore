@@ -58,3 +58,7 @@ xcuserdata/
 # local scratch / runtime data
 *.log
 /data/
+
+# Volcano OS image build
+/image/work/
+/image/out/

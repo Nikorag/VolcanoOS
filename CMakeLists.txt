@@ -30,6 +30,8 @@ set(VOS_SOURCES
   src/http.cpp
   src/api.cpp
   src/auth.cpp
+  src/auth_device.cpp
+  src/qr.cpp
   src/tokenstore.cpp
   src/installer.cpp
   src/extract.cpp
@@ -44,6 +46,8 @@ set(VOS_SOURCES
   src/pages.cpp
   src/bridge.cpp
   src/overlay.cpp
+  src/netctl.cpp
+  src/system_pages.cpp
 )
 if(APPLE)
   list(APPEND VOS_SOURCES src/webview_mac.mm src/overlay_mac.mm src/tokenstore_mac.cpp)
