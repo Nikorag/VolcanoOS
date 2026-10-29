@@ -14,6 +14,23 @@ namespace {
 
 const char* kUserAgent = "ZontoVolcano/" VOS_VERSION " VolcanoOS (Zonto Games launcher)";
 
+// A libcurl bundled into an AppImage was built for another distro's certificate layout, so
+// point it at whichever system CA bundle exists. null = leave the library default alone.
+const char* systemCaBundle() {
+#ifdef __linux__
+  static const std::string path = [] {
+    for (const char* p : {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem", "/etc/ssl/cert.pem"}) {
+      std::error_code ec;
+      if (fs::exists(p, ec)) return std::string(p);
+    }
+    return std::string();
+  }();
+  return path.empty() ? nullptr : path.c_str();
+#else
+  return nullptr;
+#endif
+}
+
 size_t writeString(char* p, size_t sz, size_t n, void* ud) {
   static_cast<std::string*>(ud)->append(p, sz * n);
   return sz * n;
@@ -44,6 +61,7 @@ HttpResponse httpRequest(const HttpRequest& req) {
     out.error = "curl init failed";
     return out;
   }
+  if (const char* ca = systemCaBundle()) curl_easy_setopt(c, CURLOPT_CAINFO, ca);
   curl_slist* headers = nullptr;
   if (!req.bearer.empty()) headers = curl_slist_append(headers, ("Authorization: Bearer " + req.bearer).c_str());
   if (!req.contentType.empty()) headers = curl_slist_append(headers, ("Content-Type: " + req.contentType).c_str());
@@ -150,6 +168,7 @@ DownloadResult httpDownload(const DownloadRequest& req) {
 
   CURL* c = curl_easy_init();
   ctx.curl = c;
+  if (const char* ca = systemCaBundle()) curl_easy_setopt(c, CURLOPT_CAINFO, ca);
   curl_easy_setopt(c, CURLOPT_URL, req.url.c_str());
   curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
   curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);

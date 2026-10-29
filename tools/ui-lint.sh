@@ -28,18 +28,24 @@ CASES=(
   "profile|--screen profile"
 )
 
+# 16:9 (TV) and 16:10 (Steam Deck): narrower screens are where layouts collide.
+SIZES=(1920x1080 1280x800)
+
 fail=0
-for c in "${CASES[@]}"; do
-  name="${c%%|*}"; args="${c#*|}"
-  # shellcheck disable=SC2086
-  out="$("$BIN" --demo --windowed --size 1920x1080 --ui-lint $args --shot "$TMP/shot.png" --shot-frame 90 2>&1)"
-  code=$?
-  if [ $code -eq 0 ]; then
-    printf '  ok    %s\n' "$name"
-  else
-    fail=1
-    printf '  FAIL  %s\n' "$name"
-    printf '%s\n' "$out" | grep 'UI LINT' | sed 's/^/          /'
-  fi
+for size in "${SIZES[@]}"; do
+  echo "$size"
+  for c in "${CASES[@]}"; do
+    name="${c%%|*}"; args="${c#*|}"
+    # shellcheck disable=SC2086
+    out="$("$BIN" --demo --windowed --size "$size" --ui-lint $args --shot "$TMP/shot.png" --shot-frame 90 2>&1)"
+    code=$?
+    if [ $code -eq 0 ]; then
+      printf '  ok    %s\n' "$name"
+    else
+      fail=1
+      printf '  FAIL  %s\n' "$name"
+      printf '%s\n' "$out" | grep 'UI LINT' | sed 's/^/          /'
+    fi
+  done
 done
 exit $fail

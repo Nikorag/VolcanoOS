@@ -20,8 +20,11 @@ class BrowserAppWebView : public WebView {
       err = "No Chromium-based browser (Chrome, Edge, Chromium, Brave) was found to run web titles.";
       return false;
     }
+    // A Flatpak browser (the usual route on Steam Deck) is sandboxed and can't see our data dir,
+    // so it keeps its own profile; anything else gets one of ours so it never touches the player's.
+    const bool flatpak = exe.string().find("/flatpak/exports/") != std::string::npos;
     fs::path profile = dataDir() / "web-profile";
-    std::string args = "--app=" + url + " --user-data-dir=" + profile.string() +
+    std::string args = "--app=" + url + (flatpak ? "" : " --user-data-dir=" + profile.string()) +
                        " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required";
     if (fullscreen) args += " --start-fullscreen";
     (void)title;
@@ -65,6 +68,12 @@ class BrowserAppWebView : public WebView {
         candidates.push_back(dir + "/" + n);
       if (j == std::string::npos) break;
       i = j + 1;
+    }
+    // Flatpak exports (not on PATH): the common way to get Chromium on a Steam Deck.
+    const char* home = std::getenv("HOME");
+    for (const char* id : {"org.chromium.Chromium", "com.google.Chrome", "com.brave.Browser", "com.microsoft.Edge"}) {
+      candidates.push_back(std::string("/var/lib/flatpak/exports/bin/") + id);
+      if (home) candidates.push_back(std::string(home) + "/.local/share/flatpak/exports/bin/" + id);
     }
 #endif
     std::error_code ec;

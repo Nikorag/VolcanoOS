@@ -19,13 +19,24 @@
     ./build/ZontoVolcano --demo --windowed   # offline fixture library
     ZONTO_API=http://localhost:3100 ./build/ZontoVolcano   # local server
 
-Layout rule (enforced): a key prompt never sits on top of text, a button or another prompt, and a button's label always fits inside it. `tools/ui-lint.sh` renders every demo screen with `--ui-lint` and fails on any violation.
+Layout rule (enforced): a key prompt never sits on top of text, a button or another prompt, and a button's label always fits inside it. `tools/ui-lint.sh` renders every demo screen at 16:9 and at the Deck's 16:10 with `--ui-lint` and fails on any violation.
 
 Options: `--shot out.png --press right,right,a` renders a scripted demo frame to PNG. See `--help`.
 Fonts: JetBrains Mono and Archivo (OFL) in `assets/fonts`.
 
 ## Console image (Raspberry Pi)
 `./image/build.sh` builds an SD-card image: stripped Raspberry Pi OS Lite that boots straight into Volcano OS, with controller support, networking, and native **Wi-Fi** and **Bluetooth** pages in the launcher (Start -> Network / Bluetooth). See [image/README.md](image/README.md).
+
+## Steam Deck (AppImage)
+A portable build for the Steam Deck (and any x86_64 Linux desktop):
+
+- **Get it:** Actions -> *Build AppImage (Steam Deck)* -> Run workflow, then download the `zonto-volcano-appimage` artifact. Or on a Linux machine: `packaging/appimage/build.sh` (output in `dist/`).
+- **Install:** copy `Zonto_Volcano-<version>-x86_64.AppImage` to the Deck, `chmod +x` it, double-click it in Desktop Mode.
+- **Gaming Mode:** in Steam, *Add a Non-Steam Game*, browse to the AppImage (set the file filter to "All files"). Steam Input hands the launcher your controller.
+- **Web games and sign-in fallback** open in a Chromium-family browser: install *Chromium* from Discover (Flatpak). The launcher finds Flatpak browsers automatically.
+- Native games need `linux/x86_64` builds on Zonto (no Proton).
+
+It is built on Debian bookworm so it runs against any newer glibc, including SteamOS's. It has not been run on a real Deck yet; the AppImage was checked in a clean container (libraries bundled, fonts present, renders a frame at 1280x800).
 
 ## Status
 Developed and tested on macOS. Linux/Windows code paths (sockets, process spawn, Chromium fallback) are written but untested.

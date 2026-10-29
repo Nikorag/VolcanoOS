@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Zonto Volcano
+GenericName=Game Launcher
+Comment=The Zonto Games Big Picture launcher
+Exec=ZontoVolcano
+Icon=zonto-volcano
+Categories=Game;
+Terminal=false
