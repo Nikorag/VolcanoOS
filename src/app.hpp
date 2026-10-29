@@ -19,10 +19,12 @@
 #include "gfx.hpp"
 #include "input.hpp"
 #include "installer.hpp"
+#include "netctl.hpp"
 #include "osk.hpp"
 #include "overlay.hpp"
 #include "pages.hpp"
 #include "runner.hpp"
+#include "system_pages.hpp"
 #include "util.hpp"
 #include "webview.hpp"
 
@@ -48,7 +50,7 @@ class App {
 
  private:
   // ---- types --------------------------------------------------------------
-  enum class Screen { Boot, SignIn, Home, Pages };
+  enum class Screen { Boot, SignIn, Home, Pages, System };
   enum class Kind { Install, Update, Play, PlayWeb, Installing, Running, Unavailable };
   struct Primary {
     Kind kind;
@@ -119,6 +121,7 @@ class App {
   void drawHome(double now, float dt);
   void drawTopBar(double now);
   void drawPages(double now);
+  void drawSystem(double now);
   void drawHero(const GameEntry* g, double now);
   void drawInfo(const GameEntry* g, double now);
   void drawShelf(double now, float dt);
@@ -134,6 +137,9 @@ class App {
   void openGameMenu();
   void openSystemMenu();
   void openPage(PageTab t);
+  void openSystem(SysTab t);
+  void closeSystem();
+  void checkFirstRunNetwork();
   void openConfirm(const std::string& title, const std::string& msg, const std::string& okLabel,
                    std::function<void()> onOk);
   void closeMenu() { menu_.open = false; }
@@ -165,11 +171,14 @@ class App {
   Gfx gfx_;
   Input input_;
   MainQueue main_;
+  std::unique_ptr<NetCtl> netctl_;  // declared before pool_ so queued jobs never outlive it
   std::unique_ptr<Pool> pool_;
   Api api_;
   std::unique_ptr<Installer> installer_;
   std::unique_ptr<Art> art_;
   std::unique_ptr<Pages> pages_;
+  std::unique_ptr<SystemPages> sys_;
+  Screen sysReturn_ = Screen::Home;  // where Back from the system screen goes
   Osk osk_;
   Background bg_;
   SignInFlow signin_;

@@ -18,7 +18,7 @@ static void usage() {
       "  --fullscreen          force fullscreen\n"
       "  --size WxH            window size when windowed (default 1600x900)\n"
       "  --demo                offline fixture library (no network, fake installs)\n"
-      "  --screen NAME         with --demo: signin | system\n"
+      "  --screen NAME         with --demo: signin | system | wifi | bluetooth | about\n"
       "  --press a,b,x,right   with --demo: scripted inputs (up down left right a b x y lb rb start)\n"
       "  --fake-game PATH      with --demo: really run this executable for native launches (overlay testing)\n"
       "  --shot FILE.png       render a few frames, save a screenshot, exit\n"

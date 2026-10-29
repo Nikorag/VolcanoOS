@@ -44,6 +44,15 @@ Same fields plus `description` (plain text or constrained Markdown), `screenshot
     `/api/store/checkout/capture` does today must run server-side on PayPal's return redirect
     (or webhook) rather than from the browser.
 
+## 1b. Controller-only sign-in (blocks a keyboard-free console)
+
+The console image signs in through a browser (OAuth + PKCE, loopback redirect), and a
+browser needs a keyboard. A device-code flow fixes that:
+
+- `POST /api/oauth/device { client_id: "zonto-launcher" }` -> `{ deviceCode, userCode, verificationUrl, expiresIn, interval }`.
+- The launcher shows `userCode` and a QR for `verificationUrl`; the player signs in on their phone.
+- `POST /api/oauth/token { grant_type: "device_code", device_code }` -> the usual token, or `authorization_pending` until approved.
+
 ## 2. Nice to have
 
 - **Player search / profiles:** `GET /api/players/[gamertag]` (public stats, level, mutual games)

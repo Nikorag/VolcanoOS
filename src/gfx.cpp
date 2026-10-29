@@ -510,7 +510,9 @@ Vec2 Gfx::text(const std::string& s, float x, float y, const TextStyle& st) {
       TTF_SetFontWrappedAlign(f, st.align == Align::Center ? TTF_WRAPPED_ALIGN_CENTER
                                   : st.align == Align::Right ? TTF_WRAPPED_ALIGN_RIGHT
                                                              : TTF_WRAPPED_ALIGN_LEFT);
+#if SDL_TTF_VERSION_ATLEAST(2, 24, 0)  // Debian bookworm ships 2.20: keep the font's own line spacing there
       TTF_SetFontLineSkip(f, static_cast<int>(std::lround(px * st.lineHeight * 1.15f)));
+#endif
     }
     TexEntry* e = stringTex(f, fk, s, st.wrap > 0 ? static_cast<int>(st.wrap * scale_) : 0);
     if (!e->tex) return {};

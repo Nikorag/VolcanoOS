@@ -22,5 +22,8 @@
 Options: `--shot out.png --press right,right,a` renders a scripted demo frame to PNG. See `--help`.
 Fonts: JetBrains Mono and Archivo (OFL) in `assets/fonts`.
 
+## Console image (Raspberry Pi)
+`./image/build.sh` builds an SD-card image: stripped Raspberry Pi OS Lite that boots straight into Volcano OS, with controller support, networking, and native **Wi-Fi** and **Bluetooth** pages in the launcher (Start -> Network / Bluetooth). See [image/README.md](image/README.md).
+
 ## Status
 Developed and tested on macOS. Linux/Windows code paths (sockets, process spawn, Chromium fallback) are written but untested.

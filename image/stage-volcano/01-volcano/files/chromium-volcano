@@ -1,0 +1,2 @@
+# Sourced by /usr/bin/chromium. Chromium runs as a Wayland client of cage.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --ozone-platform=wayland --enable-features=UseOzonePlatform --disable-features=Translate --autoplay-policy=no-user-gesture-required --disable-infobars --noerrdialogs"

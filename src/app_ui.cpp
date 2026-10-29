@@ -108,6 +108,7 @@ void App::frame(double now, float dt) {
       case Screen::SignIn: drawSignIn(now); break;
       case Screen::Home: drawHome(now, dt); break;
       case Screen::Pages: drawPages(now); break;
+      case Screen::System: drawSystem(now); break;
     }
   }
   renderOverlay(now);
@@ -209,8 +210,8 @@ void App::drawSignIn(double now) {
   TextStyle f = mono(14, theme::faint, 3);
   gfx_.text("WWW.NIKORAG.CO.UK", kMargin, H - 52, f);
   float x = W - kMargin;
-  float w = ui::promptWidth(gfx_, input_.style(), Action::Start, "MENU", 22);
-  ui::prompt(gfx_, input_.style(), Action::Start, "MENU", x - w, H - 56, 22);
+  float w = ui::promptWidth(gfx_, input_.style(), Action::Start, "NETWORK & MENU", 22);
+  ui::prompt(gfx_, input_.style(), Action::Start, "NETWORK & MENU", x - w, H - 56, 22);
 }
 
 // ---- home ----------------------------------------------------------------------------
@@ -264,10 +265,11 @@ void App::drawTopBar(double now) {
 
   // Tabs with shoulder glyphs: library filters on Home, pages elsewhere.
   const bool onPages = screen_ == Screen::Pages;
+  const bool onSystem = screen_ == Screen::System;
   const char* labels[3] = {"ALL", "INSTALLED", "WEB"};
-  if (onPages)
-    for (int i = 0; i < 3; ++i) labels[i] = Pages::label(i);
-  const int activeTab = onPages ? static_cast<int>(pages_->tab()) : static_cast<int>(filter_);
+  if (onPages || onSystem)
+    for (int i = 0; i < 3; ++i) labels[i] = onSystem ? SystemPages::label(i) : Pages::label(i);
+  const int activeTab = onSystem ? static_cast<int>(sys_->tab()) : onPages ? static_cast<int>(pages_->tab()) : static_cast<int>(filter_);
   const PadStyle ps = input_.style();
 
   auto tabs = [&](bool draw) {
@@ -339,6 +341,13 @@ void App::drawTopBar(double now) {
   };
   pill(cluster(false) - 22, W - kMargin + 16);
   cluster(true);
+}
+
+void App::drawSystem(double now) {
+  bg_.draw(gfx_, now, 0.62f);
+  sys_->update(now);
+  drawTopBar(now);
+  sys_->draw(now, input_.style());
 }
 
 void App::drawPages(double now) {

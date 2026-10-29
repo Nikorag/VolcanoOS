@@ -1,0 +1,40 @@
+# Runtime packages for the Volcano OS console. Build-only packages (compiler,
+# -dev headers) are installed and removed again in 01-volcano/01-run-chroot.sh.
+
+# Kiosk compositor: runs the launcher fullscreen, and XWayland for X11-only games.
+cage
+xwayland
+
+# Launcher runtime libraries (kept explicitly so autoremove never strips them).
+libsdl2-2.0-0
+libsdl2-ttf-2.0-0
+libsdl2-image-2.0-0
+libcurl4
+libarchive13
+
+# Graphics (Mesa vc4/v3d drivers for Pi 3/4/5) and input.
+libgl1-mesa-dri
+libegl1
+libgles2
+libinput10
+
+# Networking and Bluetooth: the launcher's Wi-Fi/Bluetooth pages drive these.
+network-manager
+bluez
+pi-bluetooth
+rfkill
+iw
+wireless-regdb
+
+# Audio (incl. Bluetooth audio).
+pipewire-audio
+alsa-utils
+
+# Session plumbing: logind/PAM session for the kiosk user, user D-Bus for pipewire.
+libpam-systemd
+dbus-user-session
+
+# Web games and the browser sign-in page run in Chromium (Wayland).
+chromium
+fonts-liberation
+fonts-noto-color-emoji

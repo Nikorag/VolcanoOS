@@ -1,0 +1,10 @@
+#!/bin/sh
+# The launcher asks the system to open the Zonto sign-in page (SDL_OpenURL ->
+# xdg-open). There is no desktop and no default browser here, so open it in an
+# app-mode Chromium window on the kiosk compositor. Only web URLs are accepted.
+case "$1" in
+  http://*|https://*) ;;
+  *) echo "xdg-open: only http(s) URLs are supported" >&2; exit 1 ;;
+esac
+exec chromium --app="$1" --user-data-dir="$HOME/.local/share/zonto/volcanoos/web-profile" \
+  --no-first-run --no-default-browser-check
