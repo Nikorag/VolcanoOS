@@ -1,0 +1,396 @@
+diff --git a/sdk/README.md b/sdk/README.md
+index f7447e6..172aafc 100644
+--- a/sdk/README.md
++++ b/sdk/README.md
+@@ -69,6 +69,9 @@ await zonto.endSession();
+ | `lobbyInvites(slug?)` / `acceptLobbyInvite(id)` / `declineLobbyInvite(id)` | In-game invite inbox |
+ | `getLobbyCodeFromLaunch()` | Browser: the `?zonto_lobby=…` code when launched from an accepted invite |
+ | `on("unlock", cb)` / `off(…)` | Subscribe to first-time achievement unlocks |
++| `launcherNotify(title, body?)` / `setLauncherStatus(text)` | Toast / status line on the [Volcano OS](https://github.com/Nikorag/VolcanoOS) overlay. Silent no-op unless launched from it |
++
++`unlock()` also raises an achievement pop-up on the Volcano OS overlay on each first-time unlock (disable with `launcherOverlay: false`). Call `achievements()` once first if you want the description shown in the pop-up. `launcherAvailable()` tells you whether the overlay is reachable.
+ 
+ ## React UI (`@zonto/sdk/react`)
+ 
+diff --git a/sdk/godot/addons/zonto/zonto_client.gd b/sdk/godot/addons/zonto/zonto_client.gd
+index 6fee980..06da48e 100644
+--- a/sdk/godot/addons/zonto/zonto_client.gd
++++ b/sdk/godot/addons/zonto/zonto_client.gd
+@@ -381,6 +381,8 @@ func unlock(achievement: Variant) -> void:
+ 			HTTPClient.METHOD_POST, {"achievement": achievement})
+ 	if result.ok and not bool(result.body.get("alreadyUnlocked", true)):
+ 		unlocked.emit(String(achievement))
++		if launcher_overlay:
++			notify_launcher("achievement", String(achievement), _achievement_description(achievement))
+ 
+ 
+ ## Unlocks several names in sequence.
+@@ -396,6 +398,10 @@ func unlock_all(names: PackedStringArray) -> void:
+ func achievements() -> Array:
+ 	var detail := await game()
+ 	var list: Variant = detail.get("achievements", [])
++	if list is Array:
++		for a in list:
++			if a is Dictionary:
++				_achievement_descriptions[String(a.get("name", "")).to_lower()] = String(a.get("description", ""))
+ 	return list if list is Array else []
+ 
+ 
+@@ -497,6 +503,65 @@ func accept_lobby_invite(invite_id: int) -> Dictionary:
+ 	return {"ok": result.ok, "code": String(result.body.get("code", "")), "error": result.error}
+ 
+ 
++# -- Volcano OS overlay -----------------------------------------------------
++
++## Raise an achievement pop-up on the Volcano OS overlay for each first-time
++## unlock (when the game was started by Volcano OS). Set false to draw your own.
++var launcher_overlay: bool = true
++
++## Descriptions cached by [method achievements] so an unlock pop-up can show
++## one without an extra request: {lowercased name -> description}.
++var _achievement_descriptions: Dictionary = {}
++
++
++## True when Volcano OS started this game and its overlay can be reached.
++func launcher_available() -> bool:
++	if OS.has_feature("web"):
++		return bool(JavaScriptBridge.eval("typeof window.ZontoLauncher !== 'undefined'", true))
++	return not OS.get_environment("ZONTO_LAUNCHER_URL").is_empty() \
++			and not OS.get_environment("ZONTO_LAUNCHER_TOKEN").is_empty()
++
++
++## Sends one event to the Volcano OS overlay: kind is "toast", "achievement"
++## or "status" (title <= 80 chars, body <= 200). Fire-and-forget: it never
++## awaits, never throws, and does nothing unless Volcano OS started the game
++## (or [member enabled] is false, so test suites never touch a launcher).
++func notify_launcher(kind: String, title: String = "", body: String = "") -> void:
++	if not enabled:
++		return
++	if OS.has_feature("web"):
++		var t := JSON.stringify(title)
++		var b := JSON.stringify(body)
++		var call := "window.ZontoLauncher.notify({title:%s,body:%s})" % [t, b]
++		if kind == "achievement":
++			call = "window.ZontoLauncher.achievement(%s,%s)" % [t, b]
++		elif kind == "status":
++			call = "window.ZontoLauncher.setStatus(%s)" % b
++		JavaScriptBridge.eval("if (window.ZontoLauncher) { try { %s } catch (e) {} }" % call)
++		return
++	var url := OS.get_environment("ZONTO_LAUNCHER_URL")
++	var token := OS.get_environment("ZONTO_LAUNCHER_TOKEN")
++	if url.is_empty() or token.is_empty():
++		return
++	var http := HTTPRequest.new()
++	http.timeout = 3.0
++	add_child(http)
++	http.request_completed.connect(func(_r, _c, _h, _b): http.queue_free())
++	var headers := PackedStringArray(["Content-Type: application/json", "Authorization: Bearer %s" % token])
++	var payload := JSON.stringify({"kind": kind, "title": title, "body": body})
++	if http.request(url.rstrip("/") + "/v1/notify", headers, HTTPClient.METHOD_POST, payload) != OK:
++		http.queue_free()
++
++
++## Sets the status line shown in the Volcano OS in-game menu ("Chapter 3").
++func set_launcher_status(text: String) -> void:
++	notify_launcher("status", "", text)
++
++
++func _achievement_description(achievement: Variant) -> String:
++	return String(_achievement_descriptions.get(String(achievement).to_lower(), ""))
++
++
+ ## Declines an invite.
+ func decline_lobby_invite(invite_id: int) -> void:
+ 	if not enabled or not is_authenticated():
+diff --git a/sdk/package.json b/sdk/package.json
+index 6b15036..685cc4b 100644
+--- a/sdk/package.json
++++ b/sdk/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@zonto/sdk",
+-  "version": "0.7.2",
++  "version": "0.8.0",
+   "description": "Zonto Games platform SDK \u2014 Sign in with Zonto (OAuth + PKCE), launch tickets, presence, playtime, achievements, leaderboards, and cloud saves for game clients, plus a ZontoAdmin client and `zonto` CLI for managing leaderboard and achievement definitions.",
+   "license": "MIT",
+   "homepage": "https://www.nikorag.co.uk",
+@@ -55,8 +55,8 @@
+   "scripts": {
+     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node rename-cjs.mjs",
+     "prepublishOnly": "npm run build",
+-    "test": "node --test test/admin.test.mjs test/cli.test.mjs && node test/browser-fetch.test.mjs",
+-    "test:unit": "node --test test/admin.test.mjs test/cli.test.mjs"
++    "test": "node --test test/admin.test.mjs test/cli.test.mjs test/launcher.test.mjs && node test/browser-fetch.test.mjs",
++    "test:unit": "node --test test/admin.test.mjs test/cli.test.mjs test/launcher.test.mjs"
+   },
+   "devDependencies": {
+     "playwright": "^1.62.1",
+diff --git a/sdk/src/index.ts b/sdk/src/index.ts
+index 559eaea..69ac803 100644
+--- a/sdk/src/index.ts
++++ b/sdk/src/index.ts
+@@ -13,6 +13,10 @@
+  * await zonto.endSession();                    // stops heartbeats, clears "now playing"
+  * ```
+  *
++ * Launched from the Volcano OS launcher? Unlocks automatically raise an achievement
++ * pop-up on its overlay; `zonto.launcherNotify()` / `zonto.setLauncherStatus()` let you
++ * add your own toasts and a status line. All of it is a silent no-op anywhere else.
++ *
+  * Managing a game's leaderboard and achievement definitions is a separate,
+  * admin-only entry point: `ZontoAdmin` from "@zonto/sdk/admin".
+  */
+@@ -100,6 +104,69 @@ export class ZontoError extends Error {
+   }
+ }
+ 
++// ── Volcano OS overlay bridge ───────────────────────────────────────────────────
++//
++// The Volcano OS launcher can show toasts, achievement pop-ups and a status line
++// over a running game. Web games reach it through `window.ZontoLauncher` (injected
++// by the launcher's web renderer); native hosts (Node/Electron/etc.) through a
++// loopback HTTP endpoint described by ZONTO_LAUNCHER_URL / ZONTO_LAUNCHER_TOKEN.
++// Both are best-effort and fire-and-forget: they never throw and never block play.
++
++export type ZontoLauncherEvent = {
++  /** Default "toast". */
++  kind?: "toast" | "achievement" | "status";
++  /** Up to 80 characters. */
++  title?: string;
++  /** Up to 200 characters. */
++  body?: string;
++};
++
++type LauncherGlobal = {
++  notify?: (o: { title?: string; body?: string }) => void;
++  achievement?: (name: string, description?: string) => void;
++  setStatus?: (text: string) => void;
++};
++
++function launcherEnv(name: string): string | undefined {
++  try {
++    const p = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
++    return p?.env?.[name] || undefined;
++  } catch {
++    return undefined;
++  }
++}
++
++/** True when this game was started by Volcano OS and can reach its overlay. */
++export function launcherAvailable(): boolean {
++  const g = (globalThis as { ZontoLauncher?: LauncherGlobal }).ZontoLauncher;
++  return !!g || (!!launcherEnv("ZONTO_LAUNCHER_URL") && !!launcherEnv("ZONTO_LAUNCHER_TOKEN"));
++}
++
++/** Send one event to the Volcano OS overlay. Never throws, never needs awaiting. */
++export function launcherNotify(ev: ZontoLauncherEvent, fetchImpl: typeof fetch = fetch.bind(globalThis)): void {
++  try {
++    const web = (globalThis as { ZontoLauncher?: LauncherGlobal }).ZontoLauncher;
++    if (web) {
++      if (ev.kind === "achievement") web.achievement?.(ev.title ?? "", ev.body);
++      else if (ev.kind === "status") web.setStatus?.(ev.body ?? "");
++      else web.notify?.({ title: ev.title, body: ev.body });
++      return;
++    }
++    const url = launcherEnv("ZONTO_LAUNCHER_URL");
++    const token = launcherEnv("ZONTO_LAUNCHER_TOKEN");
++    if (!url || !token) return;
++    void Promise.resolve(
++      fetchImpl(`${url.replace(/\/+$/, "")}/v1/notify`, {
++        method: "POST",
++        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
++        body: JSON.stringify(ev),
++      }),
++    ).catch(() => {});
++  } catch {
++    // The overlay is a nicety; it must never interrupt the game.
++  }
++}
++
+ export type ZontoClientOptions = {
+   /** Platform origin, e.g. https://zontohub.example.com */
+   baseUrl: string;
+@@ -113,6 +180,9 @@ export type ZontoClientOptions = {
+   heartbeatSeconds?: number;
+   /** Custom fetch (tests, engines with a non-global fetch). */
+   fetch?: typeof fetch;
++  /** Show an achievement pop-up on the Volcano OS overlay on each first-time
++   *  unlock (when launched from it). Default true. */
++  launcherOverlay?: boolean;
+ };
+ 
+ export type ZontoUnlockEvent = { name: string; gameSlug: string };
+@@ -126,6 +196,10 @@ export class ZontoClient {
+   private heartbeatMs: number;
+   private fetchImpl: typeof fetch;
+   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
++  private launcherOverlay: boolean;
++  /** Filled by achievements(): lets unlock() put the description in the pop-up
++   *  without an extra request. */
++  private achievementIndex = new Map<string, ZontoAchievement>();
+ 
+   constructor(options: ZontoClientOptions) {
+     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
+@@ -133,6 +207,7 @@ export class ZontoClient {
+     this._token = options.token ?? null;
+     this.onTokenChange = options.onTokenChange;
+     this.heartbeatMs = (options.heartbeatSeconds ?? 120) * 1000;
++    this.launcherOverlay = options.launcherOverlay ?? true;
+     // Bind the default: it gets invoked as `this.fetchImpl(...)`, and browser
+     // fetch rejects any receiver other than the global ("Illegal invocation").
+     this.fetchImpl = options.fetch ?? fetch.bind(globalThis);
+@@ -346,6 +421,10 @@ export class ZontoClient {
+   async achievements(gameSlug = this.gameSlug): Promise<ZontoAchievement[]> {
+     const slug = requireSlug(gameSlug);
+     const data = await this.request<{ achievements: ZontoAchievement[] }>(`/api/games/${slug}`);
++    for (const a of data.achievements) {
++      this.achievementIndex.set(String(a.id), a);
++      this.achievementIndex.set(a.name.toLowerCase(), a);
++    }
+     return data.achievements;
+   }
+ 
+@@ -360,11 +439,28 @@ export class ZontoClient {
+       body: { achievement },
+     });
+     if (result.ok && !result.alreadyUnlocked) {
+-      this.emit("unlock", { name: String(achievement), gameSlug: slug });
++      const known = this.achievementIndex.get(typeof achievement === "number" ? String(achievement) : achievement.toLowerCase());
++      const name = known?.name ?? String(achievement);
++      this.emit("unlock", { name, gameSlug: slug });
++      if (this.launcherOverlay) {
++        launcherNotify({ kind: "achievement", title: name, body: known?.description ?? "" }, this.fetchImpl);
++      }
+     }
+     return result;
+   }
+ 
++  // ── Volcano OS overlay ───────────────────────────────────────────────────────
++
++  /** Show a toast on the Volcano OS overlay. No-op unless launched from it. */
++  launcherNotify(title: string, body = ""): void {
++    launcherNotify({ kind: "toast", title, body }, this.fetchImpl);
++  }
++
++  /** Set the status line shown in the Volcano OS in-game menu ("Chapter 3"). */
++  setLauncherStatus(text: string): void {
++    launcherNotify({ kind: "status", body: text }, this.fetchImpl);
++  }
++
+   // ── leaderboards ───────────────────────────────────────────────────────────
+ 
+   /** Ranked entries for one board (default scope "global"). `myRank` is
+diff --git a/sdk/test/launcher.test.mjs b/sdk/test/launcher.test.mjs
+new file mode 100644
+index 0000000..1834406
+--- /dev/null
++++ b/sdk/test/launcher.test.mjs
+@@ -0,0 +1,108 @@
++/**
++ * Volcano OS overlay bridge: native (env + loopback fetch) and web
++ * (window.ZontoLauncher) paths, and that unlock() raises an achievement pop-up
++ * only for first-time unlocks.
++ *
++ * Run with: npm run test:unit  (needs the dist/ build)
++ */
++import { test, beforeEach, afterEach } from "node:test";
++import assert from "node:assert/strict";
++import { ZontoClient, launcherAvailable, launcherNotify } from "../dist/index.js";
++
++const ENV = ["ZONTO_LAUNCHER_URL", "ZONTO_LAUNCHER_TOKEN"];
++beforeEach(() => {
++  for (const k of ENV) delete process.env[k];
++  delete globalThis.ZontoLauncher;
++});
++afterEach(() => {
++  for (const k of ENV) delete process.env[k];
++  delete globalThis.ZontoLauncher;
++});
++
++function fakeFetch(calls, unlockResult = { ok: true, alreadyUnlocked: false }) {
++  return async (url, init = {}) => {
++    calls.push({ url: String(url), init });
++    const u = String(url);
++    const body = u.includes("/unlock")
++      ? unlockResult
++      : u.endsWith("/api/games/g")
++        ? { achievements: [{ id: 4, name: "Dead Air", description: "Survive the first tide.", rarityPct: 5, unlockedAt: null }] }
++        : { ok: true };
++    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
++  };
++}
++
++test("not launched from Volcano OS: nothing is sent", () => {
++  const calls = [];
++  assert.equal(launcherAvailable(), false);
++  launcherNotify({ title: "x" }, fakeFetch(calls));
++  assert.equal(calls.length, 0);
++});
++
++test("native: POSTs to the loopback endpoint with the bearer token", async () => {
++  process.env.ZONTO_LAUNCHER_URL = "http://127.0.0.1:5555/";
++  process.env.ZONTO_LAUNCHER_TOKEN = "tok";
++  const calls = [];
++  assert.equal(launcherAvailable(), true);
++  launcherNotify({ kind: "toast", title: "Hi", body: "there" }, fakeFetch(calls));
++  assert.equal(calls.length, 1);
++  assert.equal(calls[0].url, "http://127.0.0.1:5555/v1/notify");
++  assert.equal(calls[0].init.headers.Authorization, "Bearer tok");
++  assert.deepEqual(JSON.parse(calls[0].init.body), { kind: "toast", title: "Hi", body: "there" });
++});
++
++test("native: a failing overlay never throws or rejects", async () => {
++  process.env.ZONTO_LAUNCHER_URL = "http://127.0.0.1:1";
++  process.env.ZONTO_LAUNCHER_TOKEN = "tok";
++  launcherNotify({ title: "x" }, async () => { throw new Error("connection refused"); });
++  await new Promise((r) => setTimeout(r, 10)); // would surface as an unhandled rejection
++});
++
++test("web: uses window.ZontoLauncher", () => {
++  const got = [];
++  globalThis.ZontoLauncher = {
++    notify: (o) => got.push(["notify", o]),
++    achievement: (n, d) => got.push(["achievement", n, d]),
++    setStatus: (t) => got.push(["status", t]),
++  };
++  launcherNotify({ kind: "achievement", title: "A", body: "B" });
++  launcherNotify({ kind: "status", body: "Chapter 3" });
++  launcherNotify({ title: "T", body: "U" });
++  assert.deepEqual(got, [["achievement", "A", "B"], ["status", "Chapter 3"], ["notify", { title: "T", body: "U" }]]);
++});
++
++test("unlock(): first-time unlock raises an achievement pop-up with the description", async () => {
++  process.env.ZONTO_LAUNCHER_URL = "http://127.0.0.1:5555";
++  process.env.ZONTO_LAUNCHER_TOKEN = "tok";
++  const calls = [];
++  const z = new ZontoClient({ baseUrl: "https://z.test", gameSlug: "g", token: "t", fetch: fakeFetch(calls) });
++  await z.achievements(); // primes the description cache
++  await z.unlock("dead air");
++  const notify = calls.filter((c) => c.url.endsWith("/v1/notify"));
++  assert.equal(notify.length, 1);
++  assert.deepEqual(JSON.parse(notify[0].init.body), { kind: "achievement", title: "Dead Air", body: "Survive the first tide." });
++});
++
++test("unlock(): already-unlocked, or launcherOverlay:false, sends nothing", async () => {
++  process.env.ZONTO_LAUNCHER_URL = "http://127.0.0.1:5555";
++  process.env.ZONTO_LAUNCHER_TOKEN = "tok";
++  const again = [];
++  await new ZontoClient({ baseUrl: "https://z.test", gameSlug: "g", token: "t", fetch: fakeFetch(again, { ok: true, alreadyUnlocked: true }) }).unlock("x");
++  assert.equal(again.filter((c) => c.url.endsWith("/v1/notify")).length, 0);
++  const off = [];
++  await new ZontoClient({ baseUrl: "https://z.test", gameSlug: "g", token: "t", launcherOverlay: false, fetch: fakeFetch(off) }).unlock("x");
++  assert.equal(off.filter((c) => c.url.endsWith("/v1/notify")).length, 0);
++});
++
++test("setLauncherStatus() / launcherNotify() convenience methods", () => {
++  process.env.ZONTO_LAUNCHER_URL = "http://127.0.0.1:5555";
++  process.env.ZONTO_LAUNCHER_TOKEN = "tok";
++  const calls = [];
++  const z = new ZontoClient({ baseUrl: "https://z.test", gameSlug: "g", token: "t", fetch: fakeFetch(calls) });
++  z.setLauncherStatus("Chapter 3");
++  z.launcherNotify("Round 2", "Fight!");
++  assert.deepEqual(calls.map((c) => JSON.parse(c.init.body)), [
++    { kind: "status", body: "Chapter 3" },
++    { kind: "toast", title: "Round 2", body: "Fight!" },
++  ]);
++});

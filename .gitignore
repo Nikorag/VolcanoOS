@@ -39,3 +39,22 @@
 
 # debug information files
 *.dwo
+
+# --- Volcano OS ---
+# CMake build trees
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+*.xcodeproj/
+xcuserdata/
+
+# local scratch / runtime data
+*.log
+/data/
