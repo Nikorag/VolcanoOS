@@ -7,7 +7,6 @@
 # Settings via environment:
 #   VOLCANO_COUNTRY   Wi-Fi regulatory country code        (default GB)
 #   VOLCANO_TZ        timezone                             (default Europe/London)
-#   VOLCANO_PASSWORD  password of the 'volcano' user       (default: random, printed at the end)
 #   VOLCANO_SSH       1 = enable the SSH server            (default 0)
 #   PIGEN_REF         pi-gen branch/tag to build with      (default bookworm-arm64)
 set -euo pipefail
@@ -20,11 +19,6 @@ PIGEN_REF="${PIGEN_REF:-bookworm-arm64}"
 COUNTRY="${VOLCANO_COUNTRY:-GB}"
 TZONE="${VOLCANO_TZ:-Europe/London}"
 SSH="${VOLCANO_SSH:-0}"
-GENERATED_PW=0
-if [ -z "${VOLCANO_PASSWORD:-}" ]; then
-  VOLCANO_PASSWORD="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 12)"
-  GENERATED_PW=1
-fi
 
 command -v docker >/dev/null || { echo "docker is required (https://docs.docker.com/get-docker/)" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "docker is installed but not running" >&2; exit 1; }
@@ -57,7 +51,8 @@ KEYBOARD_LAYOUT="English (UK)"
 TIMEZONE_DEFAULT=${TZONE}
 WPA_COUNTRY=${COUNTRY}
 FIRST_USER_NAME=volcano
-FIRST_USER_PASS=${VOLCANO_PASSWORD}
+# pi-gen wants a value here; the stage clears it again (the account ends up passwordless).
+FIRST_USER_PASS=volcano
 DISABLE_FIRST_BOOT_USER_RENAME=1
 ENABLE_SSH=${SSH}
 DEPLOY_COMPRESSION=xz
@@ -72,6 +67,4 @@ IMG="$(ls -t "$PIGEN"/deploy/*volcano-os*.img.xz 2>/dev/null | head -n1 || true)
 cp "$IMG" "$OUT/"
 echo
 echo "Image:    $OUT/$(basename "$IMG")"
-echo "Login:    volcano / ${VOLCANO_PASSWORD}  (console rescue on tty2, and SSH if enabled)"
-[ "$GENERATED_PW" = 1 ] && echo "          (password was generated; set VOLCANO_PASSWORD to choose your own)"
 echo "Flash it: see image/README.md"

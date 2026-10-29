@@ -6,6 +6,7 @@ stripped out, booting straight into the Volcano OS launcher. Supports Raspberry 
 
 What's in it:
 
+- **No passwords**: it boots straight into the launcher with no login prompt, and the `volcano` account has no password.
 - **Boot**: `volcano.service` runs [cage](https://github.com/cage-kiosk/cage) (a single-app Wayland compositor) on tty1 with the launcher inside. No login prompt, no desktop. If the launcher exits or crashes it restarts.
 - **Controllers**: USB and Bluetooth pads work through SDL. The launcher's **Bluetooth** page pairs them (`bluetoothctl`); `uhid` is loaded and ERTM is disabled so Xbox pads behave.
 - **Networking**: NetworkManager. The launcher's **Wi-Fi** page scans, joins (password via the on-screen keyboard), joins hidden networks and forgets networks. Ethernet works with no setup. On first boot with no network the Wi-Fi page opens by itself.
@@ -25,8 +26,7 @@ The result is `image/out/<date>-volcano-os.img.xz`. Options (environment variabl
 |---|---|---|
 | `VOLCANO_COUNTRY` | `GB` | Wi-Fi regulatory country. Wrong values hide channels. |
 | `VOLCANO_TZ` | `Europe/London` | Timezone |
-| `VOLCANO_PASSWORD` | random, printed at the end | Password for the `volcano` user |
-| `VOLCANO_SSH` | `0` | `1` enables the SSH server |
+| `VOLCANO_SSH` | `0` | `1` enables the SSH server (there is no password, so add an SSH key, e.g. via Raspberry Pi Imager's OS customisation) |
 | `PIGEN_REF` | `bookworm-arm64` | pi-gen branch to build with |
 
 The launcher source is snapshotted from your working tree (tracked and untracked,
@@ -55,7 +55,7 @@ grows to fill the card on first boot.
 
 - **Sign-in needs a keyboard once.** The Zonto login happens in a browser, and a browser has no controller-driven on-screen keyboard. Plug in a USB keyboard for the first sign-in; the token is kept afterwards. A proper fix is a device-code / QR sign-in endpoint, see `docs/API-GAPS.md`.
 - **Native games must exist for `linux/aarch64`.** Web games work everywhere.
-- **Bluetooth keyboards/mice that need a PIN** can't be paired from the launcher (controllers use "just works" pairing and are fine). Pair those from a console with `bluetoothctl` (Ctrl+Alt+F2 on a USB keyboard, log in as `volcano`).
+- **Bluetooth keyboards/mice that need a PIN** can't be paired from the launcher (controllers use "just works" pairing and are fine). Pair those from a console with `bluetoothctl` (Ctrl+Alt+F2 on a USB keyboard, log in as `volcano`, no password).
 - Enterprise (802.1X) Wi-Fi isn't supported.
 - **Not yet tested on hardware.** The launcher compiles on Debian bookworm arm64 and the Wi-Fi/Bluetooth parsing is tested against fake `nmcli`/`bluetoothctl` output, but this image recipe has not been built end to end or booted on a Pi. Expect to iterate on the first build.
 
@@ -66,3 +66,14 @@ grows to fill the card on first boot.
     bluetoothctl devices
 
 Launcher logs for games and the browser are under `~/.local/share/zonto/volcanoos/logs`.
+
+## Building in CI / on a self-hosted runner
+
+`.github/workflows/image.yml` runs `image/build.sh` and uploads the image as an artifact
+(manual trigger). It has not been run yet. For a k3s cluster using actions-runner-controller:
+
+- Use a runner scale set in **dind** mode with `privileged: true` (pi-gen needs loop devices and qemu `binfmt_misc`).
+- The nodes need the `loop` kernel module loaded.
+- Give runners about 30 GB of ephemeral storage and 4+ GB RAM.
+- On x86 nodes the arm64 image is built under qemu (the workflow registers it); expect several hours for the first build.
+- Set the repo variable `IMAGE_RUNNER` to the scale set name. Otherwise it uses GitHub's free-for-public-repos `ubuntu-24.04-arm` runner, which builds natively (no qemu) and is the quickest route.

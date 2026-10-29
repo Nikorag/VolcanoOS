@@ -1,0 +1,46 @@
+name: Build SD-card image
+
+# Manual: Actions -> "Build SD-card image" -> Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      country:
+        description: Wi-Fi regulatory country code
+        default: GB
+
+jobs:
+  image:
+    # Set the repo variable IMAGE_RUNNER to use a self-hosted runner (scale set) instead.
+    # The default is GitHub's arm64 runner (free for public repos): the image is arm64,
+    # so it builds natively with no qemu.
+    runs-on: ${{ vars.IMAGE_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      # pi-gen needs ~15 GB; hosted runners ship with a lot of tooling we don't use.
+      - name: Free disk space
+        if: ${{ !vars.IMAGE_RUNNER }}
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      # pi-gen builds an arm64 root filesystem. On an x86 runner that needs qemu
+      # registered with the kernel (binfmt_misc is node-wide, so this needs a
+      # privileged Docker, e.g. an ARC runner in dind mode with privileged: true).
+      - name: Enable arm64 emulation
+        if: runner.arch == 'X64'
+        run: docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+      - name: Build image
+        env:
+          VOLCANO_COUNTRY: ${{ inputs.country }}
+        run: ./image/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volcano-os-image
+          path: image/out/*.img.xz
+          retention-days: 14
+          compression-level: 0  # already xz-compressed

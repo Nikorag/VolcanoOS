@@ -33,6 +33,11 @@ systemctl enable hciuart.service 2>/dev/null || true
 systemctl enable volcano.service
 systemctl set-default multi-user.target
 
+# No system password anywhere: the console boots straight into the launcher and the
+# 'volcano' account has an empty password (tty2 rescue login needs none; SSH password
+# login stays refused by sshd's defaults, so use keys if you enable SSH).
+passwd -d "${FIRST_USER_NAME}"
+
 # Hardware access for the kiosk user.
 usermod -aG bluetooth,video,render,input,audio,netdev "${FIRST_USER_NAME}"
 
