@@ -78,6 +78,7 @@ bool App::initWindow() {
     return false;
   }
   SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+  gfx_.lintEnable(opt_.lint);
   return gfx_.init(win_, ren_);
 }
 
@@ -108,6 +109,17 @@ int App::run() {
   SDL_DisableScreenSaver();  // a launcher on a TV shouldn't blank mid-menu
 
   pool_ = std::make_unique<Pool>(4);
+  // Access tokens last ~1h and refresh tokens rotate: persist each new pair before it's used,
+  // and when the server rejects the refresh token, send the player back to sign-in.
+  api_.onCredentials = [](const Credentials& c) {
+    if (!tokenstore::save(c.serialize())) logf("could not persist refreshed credentials");
+  };
+  api_.onSessionLost = [this] {
+    main_.post([this] {
+      signOut();
+      signInError_ = "YOUR SIGN-IN EXPIRED. SIGN IN AGAIN.";
+    });
+  };
   installer_ = std::make_unique<Installer>(api_, main_);
   installer_->setDemo(opt_.demo);
   loadSettings();
@@ -252,6 +264,9 @@ int App::run() {
 
   // ---- teardown ----------------------------------------------------------------
   signin_.cancel();
+  device_.cancel();
+  if (qrTex_) SDL_DestroyTexture(qrTex_);
+  qrTex_ = nullptr;
   bridge_.reset();
   if (overlayWin_) overlayWin_->show(false);
   if (web_ && web_->isOpen()) web_->close();
@@ -273,6 +288,10 @@ int App::run() {
   TTF_Quit();
   SDL_Quit();
   httpGlobalCleanup();
+  if (opt_.lint && gfx_.lintViolations() > 0) {
+    logf("UI LINT: %d violation(s)", gfx_.lintViolations());
+    return 3;
+  }
   return 0;
 }
 
@@ -294,7 +313,8 @@ void App::boot() {
   screenSince_ = nowSeconds();
   if (opt_.demo) {
     loadDemo();
-    screen_ = opt_.screen == "signin" ? Screen::SignIn : Screen::Home;
+    screen_ = (opt_.screen == "signin" || opt_.screen == "signin-phone") ? Screen::SignIn : Screen::Home;
+    if (opt_.screen == "signin-phone") startSignIn();  // demo: fixture code, no network
     pages_->loadDemo();
     if (opt_.screen == "system") openSystemMenu();
     if (opt_.screen == "achievements") openPage(PageTab::Achievements);
@@ -311,7 +331,7 @@ void App::boot() {
     checkFirstRunNetwork();
     return;
   }
-  api_.setToken(*tok);
+  api_.setCredentials(Credentials::parse(*tok));
   bootStatus_ = "CONNECTING";
   resolveAccount();
 }
@@ -365,14 +385,30 @@ void App::resolveAccount() {
       });
 }
 
+static std::string deviceName() {
+  std::string n = "Zonto Volcano";
+#ifndef _WIN32
+  char host[128] = {};
+  if (gethostname(host, sizeof host - 1) == 0 && host[0]) n += std::string(" (") + host + ")";
+#endif
+  return n;
+}
+
 void App::startSignIn() {
   signInError_.clear();
+  if (opt_.demo) return device_.startDemo();
+  device_.start(api_.base(), deviceName());
+}
+
+void App::startBrowserSignIn() {
+  signInError_.clear();
+  device_.reset();
   signin_.start(api_.base());
 }
 
-void App::onSignedIn(const std::string& token) {
-  tokenstore::save(token);
-  api_.setToken(token);
+void App::onSignedIn(const Credentials& creds) {
+  tokenstore::save(creds.serialize());
+  api_.setCredentials(creds);
   resolveAccount();
 }
 
@@ -785,11 +821,18 @@ void App::handleAction(Action a) {
   }
 
   if (screen_ == Screen::SignIn) {
+    const auto ds = device_.state();
+    const bool phoneBusy = ds == DeviceSignIn::State::Starting || ds == DeviceSignIn::State::Waiting;
+    const bool browserBusy = signin_.state() == SignInFlow::State::Waiting || signin_.state() == SignInFlow::State::Exchanging;
     if (a == Action::Accept) {
-      if (signin_.state() == SignInFlow::State::Waiting || signInBusy_) return;
+      if (phoneBusy || browserBusy || signInBusy_) return;
       if (api_.hasToken()) resolveAccount();  // offline retry
       else startSignIn();
+    } else if (a == Action::Y) {
+      // Same sign-in through this device's own browser (needs a keyboard or mouse).
+      if (!phoneBusy && !browserBusy && !signInBusy_ && !api_.hasToken()) startBrowserSignIn();
     } else if (a == Action::Back) {
+      if (phoneBusy) device_.cancel();
       if (signin_.state() == SignInFlow::State::Waiting) signin_.cancel();
     } else if (a == Action::Start || a == Action::Home) {
       openSystemMenu();

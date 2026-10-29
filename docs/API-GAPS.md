@@ -44,14 +44,16 @@ Same fields plus `description` (plain text or constrained Markdown), `screenshot
     `/api/store/checkout/capture` does today must run server-side on PayPal's return redirect
     (or webhook) rather than from the browser.
 
-## 1b. Controller-only sign-in (blocks a keyboard-free console)
+## 1b. Controller-only sign-in (done)
 
-The console image signs in through a browser (OAuth + PKCE, loopback redirect), and a
-browser needs a keyboard. A device-code flow fixes that:
+Built on the server and used by the launcher: OAuth 2.0 device authorization grant
+(RFC 8628). `POST /api/oauth/device` returns `{ deviceCode, userCode, verificationUrl,
+verificationUrlComplete, expiresIn, interval }`; the launcher shows the code and a QR of
+`verificationUrlComplete`, polls `POST /api/oauth/token` with the device-code grant, and
+receives `{ access_token, refresh_token, expires_in, player }`. Access tokens last 1 hour;
+refresh tokens rotate on every use (`grant_type: "refresh_token"`) and last 60 days.
 
-- `POST /api/oauth/device { client_id: "zonto-launcher" }` -> `{ deviceCode, userCode, verificationUrl, expiresIn, interval }`.
-- The launcher shows `userCode` and a QR for `verificationUrl`; the player signs in on their phone.
-- `POST /api/oauth/token { grant_type: "device_code", device_code }` -> the usual token, or `authorization_pending` until approved.
+Still open on the server: signing out or deleting a device does not revoke refresh tokens.
 
 ## 2. Nice to have
 

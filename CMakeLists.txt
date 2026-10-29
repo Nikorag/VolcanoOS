@@ -30,6 +30,8 @@ set(VOS_SOURCES
   src/http.cpp
   src/api.cpp
   src/auth.cpp
+  src/auth_device.cpp
+  src/qr.cpp
   src/tokenstore.cpp
   src/installer.cpp
   src/extract.cpp

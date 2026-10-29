@@ -48,12 +48,13 @@ grows to fill the card on first boot.
 ## Using it
 
 1. First boot with no network: the **Wi-Fi** page opens. Pick your network with the d-pad, press A, type the password.
-2. Back out (B), press A on **Sign in**. Sign-in opens Chromium; see the limitation below.
+2. Back out (B), press A on **Sign in**: a code and QR appear. Scan the QR with your phone (or go to the address shown and type the code), sign in there, tap Approve. The console signs itself in. No keyboard needed.
 3. Anytime: Start (or the Guide button) -> **Network** / **Bluetooth**. Controller not responding? Hold its pairing button and use the **Bluetooth** page from another controller or a keyboard.
 
 ## Known limitations
 
-- **Sign-in needs a keyboard once.** The Zonto login happens in a browser, and a browser has no controller-driven on-screen keyboard. Plug in a USB keyboard for the first sign-in; the token is kept afterwards. A proper fix is a device-code / QR sign-in endpoint, see `docs/API-GAPS.md`.
+- **"Use this device's browser" sign-in needs a keyboard.** The phone sign-in is the intended route. The browser fallback (Y on the sign-in screen) opens Chromium, which has no controller-driven keyboard.
+- **Signed out after two months unused.** Refresh tokens last 60 days from last use; after that, sign in on your phone again.
 - **Native games must exist for `linux/aarch64`.** Web games work everywhere.
 - **Bluetooth keyboards/mice that need a PIN** can't be paired from the launcher (controllers use "just works" pairing and are fine). Pair those from a console with `bluetoothctl` (Ctrl+Alt+F2 on a USB keyboard, log in as `volcano`, no password).
 - Enterprise (802.1X) Wi-Fi isn't supported.

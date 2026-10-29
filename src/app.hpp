@@ -14,6 +14,7 @@
 #include "api.hpp"
 #include "art.hpp"
 #include "auth.hpp"
+#include "auth_device.hpp"
 #include "bridge.hpp"
 #include "background.hpp"
 #include "gfx.hpp"
@@ -21,6 +22,7 @@
 #include "installer.hpp"
 #include "netctl.hpp"
 #include "osk.hpp"
+#include "qr.hpp"
 #include "overlay.hpp"
 #include "pages.hpp"
 #include "runner.hpp"
@@ -34,6 +36,7 @@ struct Options {
   bool demo = false;          // offline fixture library, fake installs
   bool windowed = false;
   bool fullscreen = false;    // force fullscreen even if settings say otherwise
+  bool lint = false;          // --ui-lint: exit non-zero if any prompt overlaps text/buttons (see Gfx::lintBox)
   int width = 1600, height = 900;
   std::string shotPath;       // render N frames, write a PNG, exit
   int shotFrame = 150;
@@ -94,8 +97,9 @@ class App {
   void handleAction(Action a);
 
   // ---- account / library ------------------------------------------------------
-  void startSignIn();
-  void onSignedIn(const std::string& token);
+  void startSignIn();         // phone sign-in (device code); falls back to the browser flow
+  void startBrowserSignIn();
+  void onSignedIn(const Credentials& creds);
   void resolveAccount();
   void signOut();
   void refreshLibrary(bool quiet);
@@ -118,6 +122,7 @@ class App {
   // ---- ui -------------------------------------------------------------------------
   void drawBoot(double now);
   void drawSignIn(double now);
+  void drawDeviceSignIn(double now);
   void drawHome(double now, float dt);
   void drawTopBar(double now);
   void drawPages(double now);
@@ -182,6 +187,10 @@ class App {
   Osk osk_;
   Background bg_;
   SignInFlow signin_;
+  DeviceSignIn device_;
+  SDL_Texture* qrTex_ = nullptr;  // QR of the current verification URL, 1 px per module
+  int qrSize_ = 0;
+  std::string qrFor_;
   std::unique_ptr<WebView> web_;
   GameProcess proc_;
 

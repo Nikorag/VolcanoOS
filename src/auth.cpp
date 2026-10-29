@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <map>
 
 #include "http.hpp"
@@ -90,6 +91,10 @@ std::string SignInFlow::authorizeUrl() const {
 std::string SignInFlow::token() const {
   std::lock_guard<std::mutex> l(m_);
   return token_;
+}
+Credentials SignInFlow::credentials() const {
+  std::lock_guard<std::mutex> l(m_);
+  return creds_;
 }
 std::string SignInFlow::error() const {
   std::lock_guard<std::mutex> l(m_);
@@ -233,6 +238,11 @@ void SignInFlow::run(std::string base) {
   {
     std::lock_guard<std::mutex> l(m_);
     token_ = j["access_token"].get<std::string>();
+    creds_ = {};
+    creds_.access = token_;
+    if (j.contains("refresh_token") && j["refresh_token"].is_string()) creds_.refresh = j["refresh_token"].get<std::string>();
+    if (j.contains("expires_in") && j["expires_in"].is_number())
+      creds_.expiresAt = static_cast<int64_t>(std::time(nullptr)) + static_cast<int64_t>(j["expires_in"].get<double>());
   }
   setState(State::Done);
 }

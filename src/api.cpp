@@ -1,6 +1,7 @@
 #include "api.hpp"
 
 #include <cstdlib>
+#include <ctime>
 
 #include "json.hpp"
 
@@ -37,24 +38,119 @@ Api::Api() {
   while (!base_.empty() && base_.back() == '/') base_.pop_back();
 }
 
-void Api::setToken(std::string t) {
+std::string Credentials::serialize() const {
+  return json{{"v", 1}, {"access", access}, {"refresh", refresh}, {"exp", expiresAt}}.dump();
+}
+
+Credentials Credentials::parse(const std::string& stored) {
+  Credentials c;
+  if (!stored.empty() && stored[0] == '{') {
+    json j = json::parse(stored, nullptr, false);
+    if (j.is_object()) {
+      if (j.contains("access") && j["access"].is_string()) c.access = j["access"].get<std::string>();
+      if (j.contains("refresh") && j["refresh"].is_string()) c.refresh = j["refresh"].get<std::string>();
+      if (j.contains("exp") && j["exp"].is_number_integer()) c.expiresAt = j["exp"].get<int64_t>();
+    }
+    return c;
+  }
+  c.access = stored;  // legacy: a bare 30-day bearer
+  return c;
+}
+
+void Api::setCredentials(Credentials c) { storeCredentials(std::move(c)); }
+
+void Api::storeCredentials(Credentials c) const {
   std::lock_guard<std::mutex> l(m_);
-  token_ = std::move(t);
+  creds_ = std::move(c);
 }
 
 std::string Api::token() const {
   std::lock_guard<std::mutex> l(m_);
-  return token_;
+  return creds_.access;
+}
+
+// Refresh a minute early so a request never leaves with a token that dies in flight.
+void Api::ensureFresh() const {
+  std::string stale;
+  {
+    std::lock_guard<std::mutex> l(m_);
+    if (creds_.refresh.empty() || creds_.expiresAt == 0) return;
+    if (static_cast<int64_t>(std::time(nullptr)) + 60 < creds_.expiresAt) return;
+    stale = creds_.access;
+  }
+  refreshTokens(stale);
+}
+
+// Returns true when `staleAccess` is no longer the current token because it was
+// refreshed, by us or by another thread. The server's rules: each refresh token
+// works once, and presenting a used one revokes the whole chain.
+bool Api::refreshTokens(const std::string& staleAccess) const {
+  std::lock_guard<std::mutex> rl(refreshM_);
+  Credentials cur;
+  {
+    std::lock_guard<std::mutex> l(m_);
+    cur = creds_;
+  }
+  if (cur.access != staleAccess) return true;  // another thread already rotated it
+  if (cur.refresh.empty()) return false;
+  // After a refresh with an unknown outcome, don't hammer. Never resend immediately either:
+  // if the server did rotate, the old token is now a replay.
+  if (nowSeconds() < nextRefreshAt_) return false;
+
+  HttpRequest r;
+  r.method = "POST";
+  r.url = base_ + "/api/oauth/token";
+  r.contentType = "application/json";
+  r.timeoutSec = 15;
+  r.body = json{{"grant_type", "refresh_token"}, {"refresh_token", cur.refresh}, {"client_id", "zonto-launcher"}}.dump();
+  HttpResponse res = httpRequest(r);
+
+  if (res.status == 0 || res.status >= 500) {  // outcome unknown: keep what we have, try again later
+    nextRefreshAt_ = nowSeconds() + 30;
+    logf("token refresh didn't complete (%s); will retry later", res.status == 0 ? res.error.c_str() : "server error");
+    return false;
+  }
+  json j = json::parse(res.body, nullptr, false);
+  if (res.ok() && j.is_object() && j.contains("access_token") && j["access_token"].is_string()) {
+    Credentials next;
+    next.access = j["access_token"].get<std::string>();
+    if (j.contains("refresh_token") && j["refresh_token"].is_string()) next.refresh = j["refresh_token"].get<std::string>();
+    double ttl = (j.contains("expires_in") && j["expires_in"].is_number()) ? j["expires_in"].get<double>() : 3600;
+    next.expiresAt = static_cast<int64_t>(std::time(nullptr)) + static_cast<int64_t>(ttl);
+    // Persist first: the old refresh token is spent, so losing the new one would sign the player out.
+    if (onCredentials) onCredentials(next);
+    storeCredentials(next);
+    nextRefreshAt_ = 0;
+    return true;
+  }
+  std::string err = j.is_object() && j.contains("error") && j["error"].is_string() ? j["error"].get<std::string>() : "";
+  if (err == "invalid_grant") {
+    logf("refresh token rejected; signing out");
+    storeCredentials({});
+    if (onSessionLost) onSessionLost();
+  } else {
+    logf("token refresh failed (HTTP %ld %s)", res.status, err.c_str());
+    nextRefreshAt_ = nowSeconds() + 30;
+  }
+  return false;
 }
 
 HttpResponse Api::call(const char* method, const std::string& path, const std::string& body) const {
-  HttpRequest r;
-  r.method = method;
-  r.url = base_ + path;
-  r.bearer = token();
-  r.body = body;
-  if (!body.empty()) r.contentType = "application/json";
-  return httpRequest(r);
+  ensureFresh();
+  auto send = [&] {
+    HttpRequest r;
+    r.method = method;
+    r.url = base_ + path;
+    r.bearer = token();
+    r.body = body;
+    if (!body.empty()) r.contentType = "application/json";
+    return httpRequest(r);
+  };
+  const std::string used = token();
+  HttpResponse res = send();
+  // Expired earlier than we thought (clock skew, e.g. a Pi booting before NTP): refresh and retry once.
+  if (res.status == 401 && !used.empty() && refreshTokens(used)) res = send();
+  return res;
 }
 
 template <class T>

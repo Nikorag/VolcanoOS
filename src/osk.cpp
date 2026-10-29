@@ -97,6 +97,7 @@ void Osk::draw(Gfx& g, PadStyle style, double now) {
   const float W = g.W(), H = g.H();
   float k = ui::easeOut(static_cast<float>((now - openedAt_) / 0.16));
   g.rect(0, 0, W, H, Color(4, 3, 3, static_cast<uint8_t>(205 * k)));
+  g.lintOcclude();
 
   const float cell = 76, gap = 10;
   float gridW = 10 * cell + 9 * gap;
