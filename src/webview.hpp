@@ -21,6 +21,9 @@ class WebView {
   virtual bool open(const std::string& url, const std::string& title, bool fullscreen, std::string& err) = 0;
   virtual bool isOpen() = 0;
   virtual void close() = 0;
+  // True if the renderer ended within seconds of opening without being asked to: a browser that
+  // handed the page to an already-running instance and exited, so the window outlives our handle.
+  virtual bool endedEarly() const { return false; }
   virtual const char* name() const = 0;
   // Receives JSON posted by the game through window.ZontoLauncher (macOS renderer).
   virtual void setMessageHandler(std::function<void(const std::string&)>) {}

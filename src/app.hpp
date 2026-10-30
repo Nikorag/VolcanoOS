@@ -162,7 +162,9 @@ class App {
   void beginSession();
   void onGameEvent(const GameEvent& e);
   void openPanel();
-  void closePanel();
+  // restoreGame: with no native overlay window the panel lives in the launcher window, so closing
+  // it must send the launcher out of the way again, or the game stays hidden behind it.
+  void closePanel(bool restoreGame = true);
   void panelAction();
   void pollInvites(double now);
   void renderOverlay(double now);
@@ -238,6 +240,12 @@ class App {
 
   Session sess_;
   bool launching_ = false;
+  // While a game or the browser has the screen, the launcher must not act on the controller it
+  // keeps reading in the background (that is how Home works over a game), or the player's
+  // presses in the game would also press buttons here. Tracked from SDL focus events.
+  bool windowFocused_ = true;
+  double inputGraceUntil_ = 0;  // drop non-Home input until then (just after a session or a focus change)
+  double lastLaunchAt_ = 0;
   Menu menu_;
   std::deque<Toast> toasts_;
 

@@ -66,6 +66,8 @@ void GameProcess::terminate() {
   if (valid_) TerminateProcess(static_cast<HANDLE>(handle_), 1);
 }
 
+void GameProcess::forceKill() { terminate(); }  // already unconditional on Windows
+
 #else
 
 bool GameProcess::spawn(const fs::path& exe, const fs::path& workdir, const std::string& args, const fs::path& logFile,
@@ -144,6 +146,10 @@ bool GameProcess::poll(int& exitCode) {
 
 void GameProcess::terminate() {
   if (valid_) kill(pid_, SIGTERM);
+}
+
+void GameProcess::forceKill() {
+  if (valid_) kill(pid_, SIGKILL);
 }
 
 #endif

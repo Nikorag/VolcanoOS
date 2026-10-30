@@ -35,6 +35,8 @@ A portable build for the Steam Deck (and any x86_64 Linux desktop):
 - **Gaming Mode:** in Steam, *Add a Non-Steam Game*, browse to the AppImage (set the file filter to "All files"). Steam Input hands the launcher your controller.
 - **Web games and sign-in fallback** open in a Chromium-family browser: install *Chromium* from Discover (Flatpak). The launcher finds Flatpak browsers automatically.
 - Native games need `linux/x86_64` builds on Zonto (no Proton).
+- **Leaving a game:** hold Start + Select (Menu + View on the Deck). A web game closes straight away; a native game opens the Volcano OS menu in front of it (Resume / back to the launcher / quit).
+- **Troubleshooting:** the launcher keeps a log at `~/.local/share/zonto/volcanoos/logs/volcano.log` (the previous run in `volcano.log.1`), and the browser's output in `web.log` next to it.
 
 It is built on Debian bookworm so it runs against any newer glibc, including SteamOS's. It has not been run on a real Deck yet; the AppImage was checked in a clean container (libraries bundled, fonts present, renders a frame at 1280x800).
 
