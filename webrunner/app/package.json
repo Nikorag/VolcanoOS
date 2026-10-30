@@ -1,0 +1,8 @@
+{
+  "name": "zonto-web-runner",
+  "version": "0.1.0",
+  "description": "Volcano OS web runner: shows a Zonto web game in a bare window",
+  "main": "main.js",
+  "private": true,
+  "license": "UNLICENSED"
+}

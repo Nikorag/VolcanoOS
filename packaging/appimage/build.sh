@@ -4,7 +4,7 @@
 #   packaging/appimage/build.sh            -> dist/Zonto_Volcano-<version>-<arch>.AppImage
 #
 # Needs: cmake, a C++17 compiler, SDL2/SDL2_ttf/SDL2_image/libcurl/libarchive dev packages,
-# librsvg2-bin (rsvg-convert), imagemagick, curl, file, patchelf. Build on the oldest distro
+# librsvg2-bin (rsvg-convert), imagemagick, curl, unzip, file, patchelf. Build on the oldest distro
 # you want to support: the bundle uses the build machine's glibc (Debian bookworm = 2.36 is
 # older than SteamOS's, which is what matters for the Deck).
 set -euo pipefail
@@ -48,15 +48,24 @@ echo ">> rendering the icon"
 rsvg-convert -w 256 -h 256 --keep-aspect-ratio "$REPO/assets/logo/zonto-volcano.svg" -o "$WORK/logo.png"
 convert "$WORK/logo.png" -background none -gravity center -extent 256x256 "$WORK/zonto-volcano.png"
 
-echo ">> bundling libraries and packing the AppImage"
+echo ">> bundling the launcher's libraries"
 export VERSION
 export LDAI_OUTPUT="Zonto_Volcano-${VERSION}-${ARCH}.AppImage"
 ( cd "$WORK" && "$TOOLS/linuxdeploy-${ARCH}.AppImage" \
     --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/ZontoVolcano" \
     --desktop-file "$HERE/zonto-volcano.desktop" \
-    --icon-file "$WORK/zonto-volcano.png" \
-    --output appimage )
+    --icon-file "$WORK/zonto-volcano.png" )
+
+# Web games run in the bundled web runner (a pinned Electron with no browser UI), so nothing needs
+# installing on the target machine. It is added *after* linuxdeploy on purpose: linuxdeploy scans
+# every ELF file in the AppDir and would try to bundle Electron's own system-library dependencies
+# (GTK, NSS...), which belong to the target system, not to us. Checksum-verified inside bundle.sh.
+echo ">> bundling the web runner"
+CACHE="$WORK/cache" "$REPO/webrunner/bundle.sh" "$ARCH" "$APPDIR/usr/lib/zonto-webrunner"
+
+echo ">> packing the AppImage"
+( cd "$WORK" && "$TOOLS/linuxdeploy-plugin-appimage-${ARCH}.AppImage" --appdir "$APPDIR" )
 
 mv "$WORK/$LDAI_OUTPUT" "$OUT/"
 echo

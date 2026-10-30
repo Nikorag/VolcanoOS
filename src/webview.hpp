@@ -24,6 +24,8 @@ class WebView {
   // True if the renderer ended within seconds of opening without being asked to: a browser that
   // handed the page to an already-running instance and exited, so the window outlives our handle.
   virtual bool endedEarly() const { return false; }
+  // The Zonto origin (scheme://host) the renderer may navigate within, besides the game's own.
+  virtual void setAllowedOrigin(const std::string&) {}
   virtual const char* name() const = 0;
   // Receives JSON posted by the game through window.ZontoLauncher (macOS renderer).
   virtual void setMessageHandler(std::function<void(const std::string&)>) {}

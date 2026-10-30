@@ -9,20 +9,37 @@ namespace vos {
 
 namespace {
 
-// Fallback renderer: a Chromium-family browser in app mode. It gets its own
-// profile so it never touches the player's everyday browser, and it's a real
-// separate process, so a misbehaving game can't take the launcher down.
+// The renderer everywhere but macOS: a separate process, so a misbehaving game can't take the
+// launcher down. Preferred is the bundled Volcano OS web runner (a bare Electron window with no
+// browser chrome: no address bar, infobars, update or permission popups, and locked to Zonto).
+// Failing that, a Chromium-family browser in app mode with a dedicated profile.
 class BrowserAppWebView : public WebView {
  public:
+  void setAllowedOrigin(const std::string& origin) override { allowedOrigin_ = origin; }
+
   bool open(const std::string& url, const std::string& title, bool fullscreen, std::string& err) override {
-    fs::path exe = findBrowser();
-    if (exe.empty()) {
-      err = "No Chromium-based browser (Chrome, Edge, Chromium, Brave) was found to run web titles.";
-      return false;
-    }
     if (proc_.running()) {  // never spawn a second window over the first
       err = "A web game is already open.";
       return false;
+    }
+    fs::path exe = bundledRunner();
+    const bool bundled = !exe.empty();
+    bundled_ = bundled;
+    if (!bundled) exe = findBrowser();
+    if (exe.empty()) {
+      err = "No browser was found to run web titles. (The Volcano OS web runner is missing from this build.)";
+      return false;
+    }
+    (void)title;
+    openedAt_ = nowSeconds();
+    closeAt_ = 0;
+    endedEarly_ = false;
+    if (bundled) {
+      std::string args = "--url=" + url + " --user-data-dir=" + (dataDir() / "web-profile").string();
+      if (!allowedOrigin_.empty()) args += " --allow-origin=" + allowedOrigin_;
+      if (!fullscreen) args += " --windowed";
+      logf("opening web game in the bundled runner: %s", exe.string().c_str());
+      return proc_.spawn(exe, dataDir(), args, dataDir() / "logs" / "web.log", err);
     }
     // Always a dedicated profile, never the player's own: a browser that finds a running
     // instance on the same profile hands the URL to it and exits at once, which looks to us
@@ -37,10 +54,6 @@ class BrowserAppWebView : public WebView {
     std::string args = "--app=" + url + " --user-data-dir=" + profile.string() +
                        " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required";
     if (fullscreen) args += " --start-fullscreen";
-    (void)title;
-    openedAt_ = nowSeconds();
-    closeAt_ = 0;
-    endedEarly_ = false;
     // The URL carries a launch ticket; args are whitespace-split, which is
     // fine because Zonto play URLs never contain spaces.
     return proc_.spawn(exe, dataDir(), args, dataDir() / "logs" / "web.log", err);
@@ -50,8 +63,10 @@ class BrowserAppWebView : public WebView {
     if (proc_.running() && proc_.poll(code)) {
       const double up = nowSeconds() - openedAt_;
       endedEarly_ = closeAt_ == 0 && up < 8;  // we didn't ask it to close, and it left almost immediately
-      logf("browser process ended after %.1fs (exit %d)%s", up, code,
-           endedEarly_ ? ": it probably handed the page to an already-running browser" : "");
+      logf("%s process ended after %.1fs (exit %d)%s", bundled_ ? "web runner" : "browser", up, code,
+           !endedEarly_ ? ""
+           : bundled_   ? ": it exited right after starting (a missing system library? see web.log)"
+                        : ": it probably handed the page to an already-running browser");
       return false;
     }
     // Asked to close but still running: it's ignoring SIGTERM, so stop asking nicely.
@@ -71,8 +86,25 @@ class BrowserAppWebView : public WebView {
   const char* name() const override { return "browser-app"; }
 
  private:
+  // Shipped in the AppImage next to the launcher (usr/lib/zonto-webrunner); a dev tree can put one
+  // in webrunner/. VOS_BROWSER (below) overrides it for testing.
+  static fs::path bundledRunner() {
+    // VOS_WEBRUNNER points at a runner explicitly (dev trees, tests); VOS_BROWSER means "use that browser".
+    if (const char* o = std::getenv("VOS_WEBRUNNER"); o && *o) return fs::path(o);
+#ifdef __linux__
+    if (const char* o = std::getenv("VOS_BROWSER"); o && *o) return {};
+    const fs::path exeDir = assetDir().parent_path();
+    std::error_code ec;
+    for (const fs::path& p : {exeDir / ".." / "lib" / "zonto-webrunner" / "zonto-web-runner", exeDir / "webrunner" / "zonto-web-runner"})
+      if (fs::exists(p, ec)) return p;
+#endif
+    return {};
+  }
+
   double openedAt_ = 0, closeAt_ = 0;
   bool endedEarly_ = false;
+  bool bundled_ = false;
+  std::string allowedOrigin_;
 
   static fs::path findBrowser() {
     // Explicit override (also how the tests substitute a fake browser).
