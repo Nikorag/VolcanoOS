@@ -6,7 +6,7 @@
 - **Library** from `GET /api/library?platform=&arch=`, cached for offline use.
 - **Install / update / uninstall** native builds: resumable download with a re-signed URL per attempt, SHA-256 verify, libarchive extraction (zip + tar.gz, path-traversal guarded), atomic promote, per-device install sync (`PUT /api/devices`).
 - **Launch** native games as supervised processes (`.app` via `open -W`), with presence heartbeats and wall-clock playtime reporting when the game doesn't self-report.
-- **Web games only** open in a separate renderer (WKWebView on macOS; a Chromium app-mode window elsewhere) using the ticketed URL from `POST /api/library/{slug}/launch`. The web view can't load anything else.
+- **Web games only** open in a separate renderer (WKWebView on macOS; the bundled web runner (Electron) in the AppImage, else a Chromium app-mode window elsewhere) using the ticketed URL from `POST /api/library/{slug}/launch`. The web view can't load anything else.
 - **Native pages, no web content:** Achievements, Social (friends, requests, activity, chat), and Profile (stats, privacy settings, devices) are drawn with SDL from the JSON APIs, with an on-screen keyboard for typing. The Store isn't built yet: it needs new endpoints, see [docs/API-GAPS.md](docs/API-GAPS.md).
 - **Controller first**: Xbox / PlayStation / Nintendo glyphs, stick + d-pad repeat, haptic ticks, keyboard fallback. `Start+Select` (or Guide) = Home: leaves a web game, or offers to quit a native one.
 
@@ -33,7 +33,7 @@ A portable build for the Steam Deck (and any x86_64 Linux desktop):
 - **Get it:** Actions -> *Build AppImage (Steam Deck)* -> Run workflow, then download the `zonto-volcano-appimage` artifact. Or on a Linux machine: `packaging/appimage/build.sh` (output in `dist/`).
 - **Install:** copy `Zonto_Volcano-<version>-x86_64.AppImage` to the Deck, `chmod +x` it, double-click it in Desktop Mode.
 - **Gaming Mode:** in Steam, *Add a Non-Steam Game*, browse to the AppImage (set the file filter to "All files"). Steam Input hands the launcher your controller.
-- **Web games and sign-in fallback** open in a Chromium-family browser: install *Chromium* from Discover (Flatpak). The launcher finds Flatpak browsers automatically.
+- **Web games** run in the bundled *web runner* (a pinned Electron, `webrunner/`): a bare full-screen window with no address bar, no infobars, no update or permission popups, and it can only show Zonto. Nothing to install. It relies on the usual desktop libraries (GTK 3, NSS) that SteamOS and most desktops already have.
 - Native games need `linux/x86_64` builds on Zonto (no Proton).
 - **Leaving a game:** hold Start + Select (Menu + View on the Deck). A web game closes straight away; a native game opens the Volcano OS menu in front of it (Resume / back to the launcher / quit).
 - **Troubleshooting:** the launcher keeps a log at `~/.local/share/zonto/volcanoos/logs/volcano.log` (the previous run in `volcano.log.1`), and the browser's output in `web.log` next to it.

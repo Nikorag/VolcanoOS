@@ -1,0 +1,17 @@
+#!/bin/sh
+# Entry point for the bundled web runner: starts the Electron next to this script with our app.
+HERE="$(dirname "$(readlink -f "$0")")"
+
+# Chromium's sandbox needs unprivileged user namespaces (the setuid helper can't be used from an
+# AppImage). SteamOS and most distros allow them. Where the system forbids them, run unsandboxed
+# rather than not at all; the runner only ever loads Zonto (see main.js).
+userns_ok() {
+  [ "$(cat /proc/sys/user/max_user_namespaces 2>/dev/null || echo 1)" != 0 ] &&
+  [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 1)" != 0 ] &&
+  [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" != 1 ]
+}
+NOSANDBOX=""
+userns_ok || NOSANDBOX="--no-sandbox"
+
+# shellcheck disable=SC2086
+exec "$HERE/electron" $NOSANDBOX "$@"

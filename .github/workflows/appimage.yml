@@ -16,7 +16,7 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential cmake pkg-config git ca-certificates curl file patchelf \
+            build-essential cmake pkg-config git ca-certificates curl unzip file patchelf \
             libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libcurl4-openssl-dev libarchive-dev \
             librsvg2-bin imagemagick
 

@@ -160,6 +160,12 @@ int App::run() {
   bg_.init();
   input_.init();
   web_ = createWebView();
+  {  // the web runner may navigate within Zonto: its own origin, besides each game's
+    const std::string& b = api_.base();
+    size_t scheme = b.find("://");
+    size_t slash = scheme == std::string::npos ? std::string::npos : b.find('/', scheme + 3);
+    web_->setAllowedOrigin(slash == std::string::npos ? b : b.substr(0, slash));
+  }
   web_->setMessageHandler([this](const std::string& json) {
     GameEvent e;
     if (GameBridge::parse(json, e)) onGameEvent(e);
@@ -761,7 +767,7 @@ void App::pollSession(double now) {
   } else if (!web_->isOpen()) {
     const bool early = web_->endedEarly();
     endSession(false, 0);
-    if (early) toast("THE BROWSER CLOSED STRAIGHT AWAY. IS ANOTHER BROWSER WINDOW ALREADY OPEN?", theme::warn, 8);
+    if (early) toast("THE GAME WINDOW CLOSED STRAIGHT AWAY. DETAILS ARE IN THE LOG (web.log).", theme::warn, 8);
     return;
   }
   if (now - sess_.lastBeat >= 60) {
