@@ -92,6 +92,9 @@ int App::run() {
   httpGlobalInit();
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
   SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");  // instant, no Spaces animation
+  // Never minimise ourselves when a game or the browser takes focus: we must still be there (and
+  // raisable) when it closes. We minimise deliberately, only to get out of a game's way.
+  SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
 #ifdef __linux__
   // Under the console's kiosk compositor (cage) we're a Wayland client. A hint, not
   // SDL_VIDEODRIVER in the environment, so games we launch still choose for themselves.
@@ -194,6 +197,16 @@ int App::run() {
     while (SDL_PollEvent(&e)) {
       switch (e.type) {
         case SDL_QUIT: running_ = false; break;
+        case SDL_WINDOWEVENT:
+          if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+            windowFocused_ = false;
+            logf("launcher lost focus (session=%d)", static_cast<int>(sess_.kind));
+          } else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+            windowFocused_ = true;
+            inputGraceUntil_ = now + 0.4;  // the press that brought us back isn't ours to act on
+            logf("launcher gained focus (session=%d)", static_cast<int>(sess_.kind));
+          }
+          break;
         case SDL_MOUSEMOTION:
           lastMouseMove_ = now;
           if (fullscreen_) SDL_ShowCursor(SDL_ENABLE);
@@ -665,6 +678,11 @@ void App::install(const GameEntry& g) {
 void App::launchNative(const GameEntry& g) {
   const Installed* inst = installer_->installed(g.slug);
   if (!inst) return;
+  if (proc_.running() || nowSeconds() - lastLaunchAt_ < 5) {  // see launchWeb
+    logf("ignoring a second native launch");
+    return;
+  }
+  lastLaunchAt_ = nowSeconds();
   if (opt_.demo && opt_.fakeGame.empty()) {
     toast("DEMO: WOULD LAUNCH " + upper(g.name), theme::ok);
     return;
@@ -705,6 +723,12 @@ void App::launchWeb(const GameEntry& g) {
     toast("DEMO: WOULD OPEN " + upper(g.name) + " IN THE BROWSER RENDERER", theme::ok);
     return;
   }
+  // One window at a time: a second launch while one is open (or just started) is always a stray press.
+  if (web_->isOpen() || nowSeconds() - lastLaunchAt_ < 5) {
+    logf("ignoring a second web launch (open=%d)", web_->isOpen() ? 1 : 0);
+    return;
+  }
+  lastLaunchAt_ = nowSeconds();
   launching_ = true;
   pool_->run<Result<LaunchInfo>>(
       main_, [this, slug = g.slug] { return api_.recordLaunch(slug); },
@@ -735,7 +759,9 @@ void App::pollSession(double now) {
       return;
     }
   } else if (!web_->isOpen()) {
+    const bool early = web_->endedEarly();
     endSession(false, 0);
+    if (early) toast("THE BROWSER CLOSED STRAIGHT AWAY. IS ANOTHER BROWSER WINDOW ALREADY OPEN?", theme::warn, 8);
     return;
   }
   if (now - sess_.lastBeat >= 60) {
@@ -748,6 +774,9 @@ void App::pollSession(double now) {
 void App::endSession(bool crashed, int code) {
   Session s = sess_;
   sess_ = Session{};
+  logf("session ended: %s (crashed=%d code=%d)", s.slug.c_str(), crashed ? 1 : 0, code);
+  // The presses that closed the game (or were meant for it a moment ago) must not land on the shelf.
+  inputGraceUntil_ = nowSeconds() + 1.2;
   bridge_.reset();
   closePanel();
   gameToasts_.clear();
@@ -772,6 +801,12 @@ void App::endSession(bool crashed, int code) {
 // ---- input --------------------------------------------------------------------------
 
 void App::handleAction(Action a) {
+  if (!opt_.demo) {  // (demo/screenshot runs have no real window focus to speak of)
+    // Another window (a game, the browser) has the screen: those presses are for it. The one
+    // exception is Home while a session runs, which is how the player gets back to us.
+    if (!windowFocused_ && !(sess_.kind != SessionKind::None && a == Action::Home)) return;
+    if (a != Action::Home && nowSeconds() < inputGraceUntil_) return;
+  }
   // The on-screen keyboard sits above everything else.
   if (osk_.isOpen()) {
     osk_.handle(a);
@@ -804,7 +839,19 @@ void App::handleAction(Action a) {
   // A game is running: Home opens the Volcano OS menu over it.
   if (sess_.kind != SessionKind::None) {
     if (!panel_) {
-      if (a == Action::Home) openPanel();
+      if (a == Action::Home) {
+        logf("Home pressed during a %s session (native overlay: %s)", sess_.kind == SessionKind::WebGame ? "web" : "native",
+             overlayWin_ ? "yes" : "no");
+        if (!overlayWin_ && sess_.kind == SessionKind::WebGame) {
+          // Nothing can be drawn above a browser window here (we can't raise a window over another
+          // application on Wayland), so a menu would open invisibly behind it. Home simply leaves the
+          // game, which is what the README promises for web titles.
+          toast("LEAVING " + upper(sess_.name), theme::dim, 3);
+          web_->close();
+        } else {
+          openPanel();
+        }
+      }
       return;
     }
     int n = sess_.kind == SessionKind::Native ? 3 : 2;
@@ -1102,7 +1149,11 @@ void App::openPanel() {
   quitArmed_ = false;
   panelOpened_ = nowSeconds();
   panelFriends_.clear();
-  if (!overlayWin_) SDL_RaiseWindow(win_);  // no native overlay: show it in the launcher window
+  if (!overlayWin_) {  // no native overlay: show it in the launcher window, in front of the game
+    SDL_ShowWindow(win_);
+    SDL_RestoreWindow(win_);
+    SDL_RaiseWindow(win_);
+  }
   input_.tick(0.2f, 30);
   if (opt_.demo) {
     panelFriends_ = {{"Marlowe", "Playing Peggy!"}, {"ash_wednesday", "Online"}};
@@ -1120,9 +1171,12 @@ void App::openPanel() {
       });
 }
 
-void App::closePanel() {
+void App::closePanel(bool restoreGame) {
   panel_ = false;
   quitArmed_ = false;
+  // No native overlay: the panel was drawn in the launcher window, which we raised over the game.
+  // Resuming means getting out of the way again.
+  if (restoreGame && !overlayWin_ && sess_.kind != SessionKind::None) SDL_MinimizeWindow(win_);
 }
 
 void App::panelAction() {
@@ -1131,7 +1185,7 @@ void App::panelAction() {
     closePanel();
   } else if (panelSel_ == 1) {
     if (native) {
-      closePanel();
+      closePanel(false);  // staying in the launcher: bring it forward rather than minimising it
       SDL_ShowWindow(win_);
       SDL_RaiseWindow(win_);
     } else {

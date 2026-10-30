@@ -20,28 +20,63 @@ class BrowserAppWebView : public WebView {
       err = "No Chromium-based browser (Chrome, Edge, Chromium, Brave) was found to run web titles.";
       return false;
     }
-    // A Flatpak browser (the usual route on Steam Deck) is sandboxed and can't see our data dir,
-    // so it keeps its own profile; anything else gets one of ours so it never touches the player's.
-    const bool flatpak = exe.string().find("/flatpak/exports/") != std::string::npos;
+    if (proc_.running()) {  // never spawn a second window over the first
+      err = "A web game is already open.";
+      return false;
+    }
+    // Always a dedicated profile, never the player's own: a browser that finds a running
+    // instance on the same profile hands the URL to it and exits at once, which looks to us
+    // like the game closing while its window is still on screen. A Flatpak browser can't see
+    // our data dir, so its profile lives inside its own sandbox data dir.
     fs::path profile = dataDir() / "web-profile";
-    std::string args = "--app=" + url + (flatpak ? "" : " --user-data-dir=" + profile.string()) +
+    const std::string exeStr = exe.string();
+    if (exeStr.find("/flatpak/exports/") != std::string::npos) {
+      const char* home = std::getenv("HOME");
+      if (home) profile = fs::path(home) / ".var" / "app" / exe.filename() / "data" / "zonto-web-profile";
+    }
+    std::string args = "--app=" + url + " --user-data-dir=" + profile.string() +
                        " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required";
     if (fullscreen) args += " --start-fullscreen";
     (void)title;
+    openedAt_ = nowSeconds();
+    closeAt_ = 0;
+    endedEarly_ = false;
     // The URL carries a launch ticket; args are whitespace-split, which is
     // fine because Zonto play URLs never contain spaces.
     return proc_.spawn(exe, dataDir(), args, dataDir() / "logs" / "web.log", err);
   }
   bool isOpen() override {
     int code;
-    if (proc_.running() && proc_.poll(code)) return false;
+    if (proc_.running() && proc_.poll(code)) {
+      const double up = nowSeconds() - openedAt_;
+      endedEarly_ = closeAt_ == 0 && up < 8;  // we didn't ask it to close, and it left almost immediately
+      logf("browser process ended after %.1fs (exit %d)%s", up, code,
+           endedEarly_ ? ": it probably handed the page to an already-running browser" : "");
+      return false;
+    }
+    // Asked to close but still running: it's ignoring SIGTERM, so stop asking nicely.
+    if (proc_.running() && closeAt_ > 0 && nowSeconds() - closeAt_ > 3) {
+      logf("browser ignored the close request; killing it");
+      proc_.forceKill();
+      closeAt_ = nowSeconds();
+    }
     return proc_.running();
   }
-  void close() override { proc_.terminate(); }
+  void close() override {
+    if (!proc_.running() || closeAt_ > 0) return;
+    proc_.terminate();
+    closeAt_ = nowSeconds();
+  }
+  bool endedEarly() const override { return endedEarly_; }
   const char* name() const override { return "browser-app"; }
 
  private:
+  double openedAt_ = 0, closeAt_ = 0;
+  bool endedEarly_ = false;
+
   static fs::path findBrowser() {
+    // Explicit override (also how the tests substitute a fake browser).
+    if (const char* o = std::getenv("VOS_BROWSER"); o && *o) return fs::path(o);
     std::vector<std::string> candidates;
 #if defined(_WIN32)
     for (const char* env : {"ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"}) {
@@ -89,7 +124,9 @@ class BrowserAppWebView : public WebView {
 
 std::unique_ptr<WebView> createWebView() {
 #ifdef __APPLE__
-  return createNativeWebView();
+  const char* force = std::getenv("VOS_WEBVIEW");  // "browser" = use the Chromium path (for testing)
+  if (!(force && std::string(force) == "browser")) return createNativeWebView();
+  return std::make_unique<BrowserAppWebView>();
 #else
   return std::make_unique<BrowserAppWebView>();
 #endif

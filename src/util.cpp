@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <sstream>
 
@@ -15,13 +16,39 @@
 
 namespace vos {
 
+// Also kept in <data dir>/logs/volcano.log (the previous run in volcano.log.1): on a console
+// or a Steam Deck there is no terminal to read stderr from.
+static std::FILE* logFile() {
+  static std::FILE* f = [] {
+    std::error_code ec;
+    fs::path dir = dataDir() / "logs";
+    fs::create_directories(dir, ec);
+    fs::rename(dir / "volcano.log", dir / "volcano.log.1", ec);
+    return std::fopen((dir / "volcano.log").string().c_str(), "w");
+  }();
+  return f;
+}
+
 void logf(const char* fmt, ...) {
+  char line[1024];
   va_list ap;
   va_start(ap, fmt);
-  std::fprintf(stderr, "[volcano] ");
-  std::vfprintf(stderr, fmt, ap);
-  std::fprintf(stderr, "\n");
+  std::vsnprintf(line, sizeof line, fmt, ap);
   va_end(ap);
+  std::fprintf(stderr, "[volcano] %s\n", line);
+  if (std::FILE* f = logFile()) {
+    char ts[16] = "--:--:--";
+    std::time_t t = std::time(nullptr);
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &t);
+#else
+    localtime_r(&t, &tmv);
+#endif
+    std::strftime(ts, sizeof ts, "%H:%M:%S", &tmv);
+    std::fprintf(f, "%s %s\n", ts, line);
+    std::fflush(f);
+  }
 }
 
 static fs::path computeDataDir() {

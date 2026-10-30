@@ -28,6 +28,7 @@ class GameProcess {
   // Non-blocking. Returns true once the process has ended and fills exitCode.
   bool poll(int& exitCode);
   void terminate();
+  void forceKill();  // SIGKILL: for a process that ignored terminate()
 
  private:
   bool valid_ = false;
