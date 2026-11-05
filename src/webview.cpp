@@ -36,7 +36,13 @@ class BrowserAppWebView : public WebView {
     }
     std::string args = "--app=" + url + " --user-data-dir=" + profile.string() +
                        " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --enable-logging=stderr";
+#ifndef __linux__
+    // Not on Linux: the kiosk compositor (cage) already makes every window fullscreen, and
+    // asking Chromium for it as well makes the browser abort at start-up (SIGTRAP).
     if (fullscreen) args += " --start-fullscreen";
+#else
+    (void)fullscreen;
+#endif
     (void)title;
     openedAt_ = nowSeconds();
     closeAt_ = 0;
