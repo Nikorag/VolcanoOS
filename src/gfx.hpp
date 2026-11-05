@@ -146,14 +146,10 @@ class Gfx {
     SDL_Texture* tex = nullptr;
     int w = 0, h = 0;
     uint64_t used = 0;
-  };
-  struct Glyph {
-    SDL_Texture* tex = nullptr;
-    int w = 0, h = 0, adv = 0;
+    std::vector<int> cuts;  // x offset of each code point boundary (unwrapped strings)
   };
   TTF_Font* font(const TextStyle& st);
   TexEntry* stringTex(TTF_Font* f, const FontKey& fk, const std::string& s, int wrapPx);
-  Glyph* glyph(TTF_Font* f, const FontKey& fk, uint32_t cp);
   void evict();
   void tris(const std::vector<SDL_Vertex>& v, const std::vector<int>& idx);
 
@@ -164,8 +160,6 @@ class Gfx {
   SDL_Texture* glowTex_ = nullptr;
   std::map<FontKey, TTF_Font*> fonts_;
   std::unordered_map<std::string, TexEntry> strings_;
-  std::map<std::pair<int, uint32_t>, Glyph> glyphs_;  // key: (font id, codepoint)
-  std::map<FontKey, int> fontIds_;
   struct LogoTex { SDL_Texture* tex = nullptr; int w = 0, h = 0; };
   std::map<int, LogoTex> logos_;  // by pixel height
   bool logoMissing_ = false;

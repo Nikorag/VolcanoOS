@@ -93,12 +93,10 @@ bool Gfx::init(SDL_Window* w, SDL_Renderer* r) {
 
 void Gfx::shutdown() {
   for (auto& [k, e] : strings_) if (e.tex) SDL_DestroyTexture(e.tex);
-  for (auto& [k, g] : glyphs_) if (g.tex) SDL_DestroyTexture(g.tex);
   for (auto& [k, l] : logos_) if (l.tex) SDL_DestroyTexture(l.tex);
   logos_.clear();
   for (auto& [k, f] : fonts_) TTF_CloseFont(f);
   strings_.clear();
-  glyphs_.clear();
   fonts_.clear();
   if (glowTex_) SDL_DestroyTexture(glowTex_);
   glowTex_ = nullptr;
@@ -424,7 +422,6 @@ TTF_Font* Gfx::font(const TextStyle& st) {
   TTF_SetFontHinting(f, TTF_HINTING_LIGHT);
   if (st.bold) TTF_SetFontStyle(f, TTF_STYLE_BOLD);
   fonts_[k] = f;
-  if (!fontIds_.count(k)) fontIds_[k] = static_cast<int>(fontIds_.size());
   return f;
 }
 
@@ -446,30 +443,20 @@ Gfx::TexEntry* Gfx::stringTex(TTF_Font* f, const FontKey& fk, const std::string&
     e.h = surf->h;
     SDL_FreeSurface(surf);
     if (e.tex) SDL_SetTextureBlendMode(e.tex, SDL_BLENDMODE_BLEND);
+    if (wrapPx <= 0) {
+      // x offset of every code point boundary (kerning included), for letter-spaced drawing.
+      size_t i = 0;
+      e.cuts.push_back(0);
+      while (i < s.size()) {
+        nextCodepoint(s, i);
+        int pw = 0, ph = 0;
+        TTF_SizeUTF8(f, s.substr(0, i).c_str(), &pw, &ph);
+        e.cuts.push_back(i >= s.size() ? e.w : std::min(pw, e.w));
+      }
+    }
   }
   e.used = frame_;
   return &(strings_[key] = e);
-}
-
-Gfx::Glyph* Gfx::glyph(TTF_Font* f, const FontKey& fk, uint32_t cp) {
-  std::pair<int, uint32_t> key{fontIds_[fk], cp};
-  auto it = glyphs_.find(key);
-  if (it != glyphs_.end()) return &it->second;
-  Glyph g;
-  int minx, maxx, miny, maxy, adv = 0;
-  if (TTF_GlyphMetrics32(f, cp, &minx, &maxx, &miny, &maxy, &adv) != 0) adv = fk.px / 2;
-  g.adv = adv;
-  if (cp != ' ') {
-    SDL_Surface* s = TTF_RenderUTF8_Blended(f, encodeUtf8(cp).c_str(), SDL_Color{255, 255, 255, 255});
-    if (s) {
-      g.tex = SDL_CreateTextureFromSurface(r_, s);
-      g.w = s->w;
-      g.h = s->h;
-      SDL_FreeSurface(s);
-      if (g.tex) SDL_SetTextureBlendMode(g.tex, SDL_BLENDMODE_BLEND);
-    }
-  }
-  return &(glyphs_[key] = g);
 }
 
 Vec2 Gfx::measure(const std::string& s, const TextStyle& st) {
@@ -488,16 +475,9 @@ Vec2 Gfx::measure(const std::string& s, const TextStyle& st) {
     return {w / scale_, h / scale_};
   }
   FontKey fk{static_cast<int>(st.font), std::max(6, px), st.bold ? 1 : 0};
-  float w = 0;
-  size_t i = 0;
-  int n = 0;
-  while (i < s.size()) {
-    uint32_t cp = nextCodepoint(s, i);
-    w += glyph(f, fk, cp)->adv / scale_ + st.tracking;
-    ++n;
-  }
-  if (n) w -= st.tracking;
-  return {w, TTF_FontHeight(f) / scale_};
+  TexEntry* e = stringTex(f, fk, s, 0);
+  int n = static_cast<int>(e->cuts.size()) - 1;
+  return {e->w / scale_ + st.tracking * std::max(0, n - 1), TTF_FontHeight(f) / scale_};
 }
 
 std::string Gfx::ellipsize(const std::string& s, const TextStyle& st, float maxW) {
@@ -557,19 +537,21 @@ Vec2 Gfx::text(const std::string& s, float x, float y, const TextStyle& st) {
     return {w, h};
   }
 
+  // Letter-spaced text: render the whole string once (the path that is known to
+  // rasterise reliably, including on Raspberry Pi's older SDL_ttf/FreeType), then
+  // blit it in per-character slices spread apart by the tracking.
+  TexEntry* e = stringTex(f, fk, s, 0);
+  if (!e->tex) return {};
   Vec2 m = measure(s, st);
   float cx = st.align == Align::Center ? x - m.x / 2 : st.align == Align::Right ? x - m.x : x;
-  size_t i = 0;
-  while (i < s.size()) {
-    uint32_t cp = nextCodepoint(s, i);
-    Glyph* g = glyph(f, fk, cp);
-    if (g->tex) {
-      SDL_SetTextureColorMod(g->tex, st.color.r, st.color.g, st.color.b);
-      SDL_SetTextureAlphaMod(g->tex, st.color.a);
-      SDL_FRect d{cx, y, g->w / scale_, g->h / scale_};
-      SDL_RenderCopyF(r_, g->tex, nullptr, &d);
-    }
-    cx += g->adv / scale_ + st.tracking;
+  SDL_SetTextureColorMod(e->tex, st.color.r, st.color.g, st.color.b);
+  SDL_SetTextureAlphaMod(e->tex, st.color.a);
+  for (size_t k = 0; k + 1 < e->cuts.size(); ++k) {
+    int sx = e->cuts[k], sw = e->cuts[k + 1] - sx;
+    if (sw <= 0) continue;
+    SDL_Rect src{sx, 0, sw, e->h};
+    SDL_FRect d{cx + sx / scale_ + st.tracking * static_cast<float>(k), y, sw / scale_, e->h / scale_};
+    SDL_RenderCopyF(r_, e->tex, &src, &d);
   }
   return m;
 }
