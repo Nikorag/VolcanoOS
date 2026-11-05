@@ -49,8 +49,13 @@ SDL_Color sc(Color c) { return SDL_Color{c.r, c.g, c.b, c.a}; }
 bool Gfx::init(SDL_Window* w, SDL_Renderer* r) {
   win_ = w;
   r_ = r;
-  monoPath_ = (assetDir() / "fonts" / "JetBrainsMono.ttf").string();
-  headPath_ = (assetDir() / "fonts" / "Archivo.ttf").string();
+  // Static instances of the variable fonts, with overlapping contours removed: SDL_ttf/FreeType on
+  // Debian 12 (the Pi) leaves white slits in synthetically emboldened variable-font glyphs.
+  const auto fonts = assetDir() / "fonts";
+  monoPath_ = (fonts / "JetBrainsMono-Regular.ttf").string();
+  monoBoldPath_ = (fonts / "JetBrainsMono-Bold.ttf").string();
+  headPath_ = (fonts / "Archivo-Regular.ttf").string();
+  headBoldPath_ = (fonts / "Archivo-Bold.ttf").string();
   SDL_SetRenderDrawBlendMode(r_, SDL_BLENDMODE_BLEND);
 
   // One soft radial falloff reused for every glow, ember and halo.
@@ -397,14 +402,14 @@ TTF_Font* Gfx::font(const TextStyle& st) {
   FontKey k{static_cast<int>(st.font), px, st.bold ? 1 : 0};
   auto it = fonts_.find(k);
   if (it != fonts_.end()) return it->second;
-  TTF_Font* f = TTF_OpenFont((st.font == Font::Mono ? monoPath_ : headPath_).c_str(), px);
+  TTF_Font* f = TTF_OpenFont(
+      (st.font == Font::Mono ? (st.bold ? monoBoldPath_ : monoPath_) : (st.bold ? headBoldPath_ : headPath_)).c_str(), px);
   if (!f) {
     logf("font load failed: %s", TTF_GetError());
     fonts_[k] = nullptr;
     return nullptr;
   }
   TTF_SetFontHinting(f, TTF_HINTING_LIGHT);
-  if (st.bold) TTF_SetFontStyle(f, TTF_STYLE_BOLD);
   fonts_[k] = f;
   return f;
 }

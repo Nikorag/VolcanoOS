@@ -163,7 +163,7 @@ class Gfx {
   struct LogoTex { SDL_Texture* tex = nullptr; int w = 0, h = 0; };
   std::map<int, LogoTex> logos_;  // by pixel height
   bool logoMissing_ = false;
-  std::string monoPath_, headPath_;
+  std::string monoPath_, monoBoldPath_, headPath_, headBoldPath_;
 
   struct LintBox { Box kind; float x, y, w, h; std::string what; };
   bool lint_ = false;
