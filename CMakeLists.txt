@@ -46,6 +46,7 @@ set(VOS_SOURCES
   src/pages.cpp
   src/bridge.cpp
   src/overlay.cpp
+  src/overlay_sdl.cpp
   src/netctl.cpp
   src/system_pages.cpp
 )

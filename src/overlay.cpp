@@ -2,7 +2,7 @@
 
 namespace vos {
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__linux__)
 std::unique_ptr<OverlayWindow> createOverlayWindow() { return nullptr; }
 #endif
 

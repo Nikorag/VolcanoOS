@@ -5,9 +5,13 @@
 
 #include <SDL.h>
 
+#include <atomic>
 #include <deque>
+#include <mutex>
 #include <map>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace vos {
 
@@ -37,6 +41,10 @@ class Input {
   bool poll(Action& out);
   void push(Action a) { q_.push_back(a); }
 
+  // Linux: while a game owns the keyboard focus the launcher gets no key events, so F10 is read
+  // straight from the keyboard devices (/dev/input) and becomes Action::Home. Only armed on request.
+  void setBackgroundHotkey(bool armed) { bgArmed_ = armed; }
+
   PadStyle style() const { return style_; }
   bool hasPad() const { return !pads_.empty(); }
   int padCount() const { return static_cast<int>(pads_.size()); }
@@ -63,6 +71,13 @@ class Input {
   bool startDown_ = false, selectDown_ = false;
   double chordStart_ = 0;
   bool chordFired_ = false;
+  void startKeyWatcher();
+  void stopKeyWatcher();
+  void keyWatcherMain();
+  std::thread keyThread_;
+  std::atomic<bool> keyStop_{false};
+  std::atomic<bool> bgArmed_{false};
+  std::atomic<int> bgHome_{0};
   PadStyle style_ = PadStyle::Keyboard;
   double lastActivity_ = 0;
   double now_ = 0;

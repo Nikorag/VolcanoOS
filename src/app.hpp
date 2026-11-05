@@ -244,6 +244,7 @@ class App {
   // keeps reading in the background (that is how Home works over a game), or the player's
   // presses in the game would also press buttons here. Tracked from SDL focus events.
   bool windowFocused_ = true;
+  bool mainFocused_ = true, overlayFocused_ = false;  // windowFocused_ = either of these
   double inputGraceUntil_ = 0;  // drop non-Home input until then (just after a session or a focus change)
   double lastLaunchAt_ = 0;
   Menu menu_;

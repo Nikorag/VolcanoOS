@@ -203,16 +203,24 @@ int App::run() {
     while (SDL_PollEvent(&e)) {
       switch (e.type) {
         case SDL_QUIT: running_ = false; break;
-        case SDL_WINDOWEVENT:
+        case SDL_WINDOWEVENT: {
+          // The overlay (a second window on Linux) counts as "us" having the screen.
+          const bool isOverlay = overlayWin_ && overlayWin_->windowId() != 0 && e.window.windowID == overlayWin_->windowId();
           if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-            windowFocused_ = false;
-            logf("launcher lost focus (session=%d)", static_cast<int>(sess_.kind));
+            (isOverlay ? overlayFocused_ : mainFocused_) = false;
+            const bool was = windowFocused_;
+            windowFocused_ = mainFocused_ || overlayFocused_;
+            if (was && !windowFocused_) logf("launcher lost focus (session=%d)", static_cast<int>(sess_.kind));
           } else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+            (isOverlay ? overlayFocused_ : mainFocused_) = true;
+            if (!windowFocused_) {
+              inputGraceUntil_ = now + 0.4;  // the press that brought us back isn't ours to act on
+              logf("launcher gained focus (session=%d)", static_cast<int>(sess_.kind));
+            }
             windowFocused_ = true;
-            inputGraceUntil_ = now + 0.4;  // the press that brought us back isn't ours to act on
-            logf("launcher gained focus (session=%d)", static_cast<int>(sess_.kind));
           }
           break;
+        }
         case SDL_MOUSEMOTION:
           lastMouseMove_ = now;
           if (fullscreen_) SDL_ShowCursor(SDL_ENABLE);
@@ -263,6 +271,8 @@ int App::run() {
     // Screenshot-mode scripting: one synthetic input every few frames.
     if (opt_.demo && scriptPos_ < opt_.script.size() && frameNo_ > 20 && frameNo_ % 6 == 0) input_.push(opt_.script[scriptPos_++]);
 
+    // While a game has the screen, F10 (read straight from the keyboard device) opens the Volcano OS menu.
+    input_.setBackgroundHotkey(!opt_.demo && sess_.kind != SessionKind::None && !windowFocused_);
     input_.update(now);
     Action a;
     while (input_.poll(a)) handleAction(a);
@@ -1236,9 +1246,14 @@ void App::pollInvites(double now) {
 void App::renderOverlay(double now) {
   while (!gameToasts_.empty() && gameToasts_.front().until < now) gameToasts_.pop_front();
   if (!overlayWin_ || !ovReady_) return;  // fallback path draws inside the launcher
-  bool want = sess_.kind != SessionKind::None && (panel_ || !gameToasts_.empty());
+  bool want = sess_.kind != SessionKind::None && (panel_ || (!gameToasts_.empty() && !overlayWin_->takesFocus()));
   if (!want) {
-    if (overlayWin_->visible()) overlayWin_->show(false);
+    if (overlayWin_->visible()) {
+      overlayWin_->show(false);
+      // A destroyed window sends no focus-lost event.
+      overlayFocused_ = false;
+      windowFocused_ = mainFocused_;
+    }
     return;
   }
   ovGfx_.begin(Color(0, 0, 0, 0));

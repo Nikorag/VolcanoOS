@@ -2,4 +2,6 @@
 # Runs inside the cage compositor. When the launcher exits cage exits and
 # systemd restarts the whole thing.
 export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
+# The in-game menu is a second window that cage puts on top of the game (see src/overlay_sdl.cpp).
+export VOS_OVERLAY_WINDOW=1
 exec /opt/volcano/bin/ZontoVolcano --fullscreen
