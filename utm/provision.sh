@@ -24,6 +24,9 @@ build() {
 
 if [ "${1:-}" = "--update" ]; then
   build
+  install -m 644 "$STAGE/01-volcano/files/volcano.service" /etc/systemd/system/volcano.service
+  install -m 755 "$STAGE/01-volcano/files/volcano-session" /usr/libexec/volcano/session
+  systemctl daemon-reload
   systemctl restart volcano.service
   exit 0
 fi

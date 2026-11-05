@@ -24,6 +24,8 @@ UtmpIdentifier=tty1
 UtmpMode=user
 Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_SESSION_CLASS=user
+# No usable GPU driver (a VM, or a Pi whose Mesa driver fails)? Fall back to software rendering rather than a black screen.
+Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
 # Start even with no keyboard/mouse attached (controller-only console).
 Environment=WLR_LIBINPUT_NO_DEVICES=1
 # -s lets a plugged-in keyboard reach tty2 (Ctrl+Alt+F2) for rescue.
