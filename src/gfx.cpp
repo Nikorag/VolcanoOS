@@ -414,9 +414,9 @@ TTF_Font* Gfx::font(const TextStyle& st) {
   return f;
 }
 
-Gfx::TexEntry* Gfx::stringTex(TTF_Font* f, const FontKey& fk, const std::string& s, int wrapPx) {
+Gfx::TexEntry* Gfx::stringTex(TTF_Font* f, const FontKey& fk, const std::string& s, int wrapPx, int trackPx) {
   std::string key = std::to_string(fk.kind) + "|" + std::to_string(fk.px) + "|" + std::to_string(fk.bold) + "|" +
-                    std::to_string(wrapPx) + "|" + s;
+                    std::to_string(wrapPx) + "|" + std::to_string(trackPx) + "|" + s;
   auto it = strings_.find(key);
   if (it != strings_.end()) {
     it->second.used = frame_;
@@ -424,48 +424,55 @@ Gfx::TexEntry* Gfx::stringTex(TTF_Font* f, const FontKey& fk, const std::string&
   }
   TexEntry e;
   SDL_Color white{255, 255, 255, 255};
-  SDL_Surface* surf = wrapPx > 0 ? TTF_RenderUTF8_Blended_Wrapped(f, s.c_str(), white, static_cast<Uint32>(wrapPx))
-                                 : TTF_RenderUTF8_Blended(f, s.c_str(), white);
-  if (surf) {
-    e.w = surf->w;
-    e.h = surf->h;
-    if (wrapPx <= 0) {
-      // Where each code point starts (kerning included), for letter-spaced drawing. Glyph ink can
-      // overhang its advance, so each boundary snaps to the nearest fully transparent pixel column:
-      // cutting through ink would leave gaps in the letters.
-      std::vector<bool> blank(static_cast<size_t>(e.w), true);
-      if (surf->format->BytesPerPixel == 4 && SDL_LockSurface(surf) == 0) {
-        const Uint32 amask = surf->format->Amask;
-        for (int y = 0; y < e.h; ++y) {
-          const Uint32* row = reinterpret_cast<const Uint32*>(static_cast<const Uint8*>(surf->pixels) + y * surf->pitch);
-          for (int x = 0; x < e.w; ++x)
-            if (row[x] & amask) blank[static_cast<size_t>(x)] = false;
-        }
-        SDL_UnlockSurface(surf);
+  SDL_Surface* surf = nullptr;
+  if (wrapPx > 0) {
+    surf = TTF_RenderUTF8_Blended_Wrapped(f, s.c_str(), white, static_cast<Uint32>(wrapPx));
+  } else if (trackPx == 0) {
+    surf = TTF_RenderUTF8_Blended(f, s.c_str(), white);
+  } else {
+    // Letter-spaced: rasterise each glyph and composite them into ONE surface at exact positions
+    // (one cached texture per string; nothing is sliced, so there are no seams).
+    std::vector<SDL_Surface*> gs;
+    std::vector<int> pens;
+    int pen = 0;
+    size_t i = 0;
+    while (i < s.size()) {
+      uint32_t cp = nextCodepoint(s, i);
+      int minx, maxx, miny, maxy, adv = 0;
+      if (TTF_GlyphMetrics32(f, cp, &minx, &maxx, &miny, &maxy, &adv) != 0) adv = fk.px / 2;
+      SDL_Surface* g = nullptr;
+      if (cp != ' ') {
+        char buf[5] = {};
+        if (cp < 0x80) buf[0] = static_cast<char>(cp);
+        else if (cp < 0x800) { buf[0] = static_cast<char>(0xC0 | (cp >> 6)); buf[1] = static_cast<char>(0x80 | (cp & 0x3f)); }
+        else if (cp < 0x10000) { buf[0] = static_cast<char>(0xE0 | (cp >> 12)); buf[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3f)); buf[2] = static_cast<char>(0x80 | (cp & 0x3f)); }
+        else { buf[0] = static_cast<char>(0xF0 | (cp >> 18)); buf[1] = static_cast<char>(0x80 | ((cp >> 12) & 0x3f)); buf[2] = static_cast<char>(0x80 | ((cp >> 6) & 0x3f)); buf[3] = static_cast<char>(0x80 | (cp & 0x3f)); }
+        g = TTF_RenderUTF8_Blended(f, buf, white);
+        if (g) SDL_SetSurfaceBlendMode(g, SDL_BLENDMODE_BLEND);
       }
-      size_t i = 0;
-      int prev = 0;
-      e.cuts.push_back(0);
-      while (i < s.size()) {
-        nextCodepoint(s, i);
-        int cut = e.w;
-        if (i < s.size()) {
-          int pw = 0, ph = 0;
-          TTF_SizeUTF8(f, s.substr(0, i).c_str(), &pw, &ph);
-          pw = std::clamp(pw, prev, e.w);
-          const int reach = std::max(2, fk.px / 3);
-          int best = pw, bestD = reach + 1;
-          for (int x = std::max(prev, pw - reach); x <= std::min(e.w, pw + reach); ++x) {
-            if (x < e.w && !blank[static_cast<size_t>(x)]) continue;
-            if (std::abs(x - pw) < bestD) bestD = std::abs(x - pw), best = x;
-          }
-          cut = best;
-        }
-        e.cuts.push_back(cut);
-        prev = cut;
+      gs.push_back(g);
+      pens.push_back(pen);
+      pen += adv + trackPx;
+    }
+    e.adv = std::max(0, pen - trackPx);
+    const int pad = std::max(4, fk.px / 2);
+    const int h = TTF_FontHeight(f);
+    surf = SDL_CreateRGBSurfaceWithFormat(0, e.adv + pad, h, 32, SDL_PIXELFORMAT_RGBA32);
+    if (surf) {
+      SDL_FillRect(surf, nullptr, 0);
+      for (size_t k = 0; k < gs.size(); ++k) {
+        if (!gs[k]) continue;
+        SDL_Rect d{pens[k], 0, 0, 0};
+        SDL_BlitSurface(gs[k], nullptr, surf, &d);
       }
     }
+    for (auto* g : gs) if (g) SDL_FreeSurface(g);
+  }
+  if (surf) {
     e.tex = SDL_CreateTextureFromSurface(r_, surf);
+    e.w = surf->w;
+    e.h = surf->h;
+    if (e.adv == 0) e.adv = surf->w;
     SDL_FreeSurface(surf);
     if (e.tex) SDL_SetTextureBlendMode(e.tex, SDL_BLENDMODE_BLEND);
   }
@@ -489,9 +496,8 @@ Vec2 Gfx::measure(const std::string& s, const TextStyle& st) {
     return {w / scale_, h / scale_};
   }
   FontKey fk{static_cast<int>(st.font), std::max(6, px), st.bold ? 1 : 0};
-  TexEntry* e = stringTex(f, fk, s, 0);
-  int n = static_cast<int>(e->cuts.size()) - 1;
-  return {e->w / scale_ + st.tracking * std::max(0, n - 1), TTF_FontHeight(f) / scale_};
+  TexEntry* e = stringTex(f, fk, s, 0, static_cast<int>(std::lround(st.tracking * scale_)));
+  return {e->adv / scale_, TTF_FontHeight(f) / scale_};
 }
 
 std::string Gfx::ellipsize(const std::string& s, const TextStyle& st, float maxW) {
@@ -551,42 +557,15 @@ Vec2 Gfx::text(const std::string& s, float x, float y, const TextStyle& st) {
     return {w, h};
   }
 
-  // Letter-spaced text: render the whole string once (the path that is known to
-  // rasterise reliably, including on Raspberry Pi's older SDL_ttf/FreeType), then
-  // blit it in per-character slices spread apart by the tracking.
-  TexEntry* e = stringTex(f, fk, s, 0);
+  // Letter-spaced text: one pre-composited texture per string (see stringTex).
+  TexEntry* e = stringTex(f, fk, s, 0, static_cast<int>(std::lround(st.tracking * scale_)));
   if (!e->tex) return {};
-  Vec2 m = measure(s, st);
+  Vec2 m = {e->adv / scale_, TTF_FontHeight(f) / scale_};
   float cx = st.align == Align::Center ? x - m.x / 2 : st.align == Align::Right ? x - m.x : x;
   SDL_SetTextureColorMod(e->tex, st.color.r, st.color.g, st.color.b);
   SDL_SetTextureAlphaMod(e->tex, st.color.a);
-  // Draw in whole device pixels at 1:1 (no render scale, no filtering): a fractional edge would
-  // blend neighbouring slices and leave seams through the letters.
-  float sx_ = 1, sy_ = 1;
-  SDL_RenderGetScale(r_, &sx_, &sy_);
-  SDL_Rect clip{};
-  const bool clipped = SDL_RenderIsClipEnabled(r_) == SDL_TRUE;
-  if (clipped) SDL_RenderGetClipRect(r_, &clip);
-  SDL_RenderSetScale(r_, 1, 1);
-  if (clipped) {
-    SDL_Rect pc{static_cast<int>(std::floor(clip.x * sx_)), static_cast<int>(std::floor(clip.y * sy_)),
-                static_cast<int>(std::ceil(clip.w * sx_)), static_cast<int>(std::ceil(clip.h * sy_))};
-    SDL_RenderSetClipRect(r_, &pc);
-  }
-  SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeNearest);
-  const int baseX = static_cast<int>(std::lround(cx * sx_));
-  const int baseY = static_cast<int>(std::lround(y * sy_));
-  const float trackPx = st.tracking * scale_;
-  for (size_t k = 0; k + 1 < e->cuts.size(); ++k) {
-    int sx = e->cuts[k], sw = e->cuts[k + 1] - sx;
-    if (sw <= 0) continue;
-    SDL_Rect src{sx, 0, sw, e->h};
-    SDL_Rect d{baseX + sx + static_cast<int>(std::lround(trackPx * static_cast<float>(k))), baseY, sw, e->h};
-    SDL_RenderCopy(r_, e->tex, &src, &d);
-  }
-  SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeLinear);
-  SDL_RenderSetScale(r_, sx_, sy_);
-  if (clipped) SDL_RenderSetClipRect(r_, &clip);
+  SDL_FRect d{cx, y, e->w / scale_, e->h / scale_};
+  SDL_RenderCopyF(r_, e->tex, nullptr, &d);
   return m;
 }
 

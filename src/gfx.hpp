@@ -146,10 +146,10 @@ class Gfx {
     SDL_Texture* tex = nullptr;
     int w = 0, h = 0;
     uint64_t used = 0;
-    std::vector<int> cuts;  // x offset of each code point boundary (unwrapped strings)
+    int adv = 0;  // layout width in px (letter-spaced strings: the texture has a little extra room for overhang)
   };
   TTF_Font* font(const TextStyle& st);
-  TexEntry* stringTex(TTF_Font* f, const FontKey& fk, const std::string& s, int wrapPx);
+  TexEntry* stringTex(TTF_Font* f, const FontKey& fk, const std::string& s, int wrapPx, int trackPx = 0);
   void evict();
   void tris(const std::vector<SDL_Vertex>& v, const std::vector<int>& idx);
 
