@@ -32,6 +32,13 @@ cd VolcanoOS && git pull && sudo ./utm/provision.sh --update
 That rebuilds and restarts only the launcher (seconds, not a 30-minute image build).
 Logs: `journalctl -u volcano -b`, and `~volcano/.local/share/zonto/volcanoos/logs/` (`volcano.log`, `web.log`).
 
+## Notes
+
+- The VM renders in software (`WLR_RENDERER=pixman`, set by a drop-in the script installs). UTM's virtio-gpu GL
+  driver makes cage segfault at start-up, which shows as a black screen after the boot animation.
+- If it ever boots to black: reboot, tap Down at GRUB, press `e`, add `systemd.mask=volcano.service` to the
+  `linux` line, Ctrl+X. You get a normal text login to fix things.
+
 ## What it can't test
 
 - **Wi-Fi and Bluetooth.** The VM only has a virtual Ethernet link, so the Wi-Fi/Bluetooth pages show

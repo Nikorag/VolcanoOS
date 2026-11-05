@@ -14,6 +14,13 @@ STAGE="$REPO/image/stage-volcano"
 USER_NAME="${VOLCANO_USER:-volcano}"
 BUILD_DEPS="build-essential cmake pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libcurl4-openssl-dev libarchive-dev"
 
+# UTM's virtio-gpu GL driver crashes cage, so the VM renders in software (pixman). VM only: the Pi image keeps GL.
+vm_dropin() {
+  install -d /etc/systemd/system/volcano.service.d
+  printf '[Service]\nEnvironment=WLR_RENDERER=pixman\nEnvironment=WLR_NO_HARDWARE_CURSORS=1\n' \
+    > /etc/systemd/system/volcano.service.d/vm.conf
+}
+
 build() {
   apt-get install -y --no-install-recommends $BUILD_DEPS
   rm -rf /tmp/volcano-build
@@ -26,6 +33,7 @@ if [ "${1:-}" = "--update" ]; then
   build
   install -m 644 "$STAGE/01-volcano/files/volcano.service" /etc/systemd/system/volcano.service
   install -m 755 "$STAGE/01-volcano/files/volcano-session" /usr/libexec/volcano/session
+  vm_dropin
   systemctl daemon-reload
   systemctl restart volcano.service
   exit 0
@@ -55,6 +63,8 @@ install -d /usr/share/plymouth/themes/volcano
 install -m 644 "$F"/plymouth/volcano/* /usr/share/plymouth/themes/volcano/
 plymouth-set-default-theme volcano
 update-initramfs -u || true
+
+vm_dropin
 
 # Quiet boot + Plymouth, as on the Pi.
 if ! grep -q 'plymouth.ignore-serial-consoles' /etc/default/grub; then
