@@ -41,6 +41,9 @@ class BrowserAppWebView : public WebView {
     openedAt_ = nowSeconds();
     closeAt_ = 0;
     endedEarly_ = false;
+    retriedNoGpu_ = false;
+    exe_ = exe;
+    args_ = args;
     // The URL carries a launch ticket; args are whitespace-split, which is
     // fine because Zonto play URLs never contain spaces.
     return proc_.spawn(exe, dataDir(), args, dataDir() / "logs" / "web.log", err);
@@ -50,6 +53,19 @@ class BrowserAppWebView : public WebView {
     if (proc_.running() && proc_.poll(code)) {
       const double up = nowSeconds() - openedAt_;
       endedEarly_ = closeAt_ == 0 && up < 8;  // we didn't ask it to close, and it left almost immediately
+      // Chromium aborting at start-up (exit by signal, e.g. 133 = SIGTRAP) is nearly always its GPU
+      // process failing on a machine without a usable GL/Wayland buffer path (a VM, a missing Mesa driver).
+      // Try once more with software rendering before giving up.
+      if (endedEarly_ && code > 128 && !retriedNoGpu_) {
+        retriedNoGpu_ = true;
+        std::string err;
+        logf("browser crashed after %.1fs (exit %d); retrying without the GPU", up, code);
+        if (proc_.spawn(exe_, dataDir(), args_ + " --disable-gpu", dataDir() / "logs" / "web.log", err)) {
+          openedAt_ = nowSeconds();
+          endedEarly_ = false;
+          return true;
+        }
+      }
       logf("browser process ended after %.1fs (exit %d)%s", up, code,
            endedEarly_ ? ": it probably handed the page to an already-running browser" : "");
       return false;
@@ -73,6 +89,9 @@ class BrowserAppWebView : public WebView {
  private:
   double openedAt_ = 0, closeAt_ = 0;
   bool endedEarly_ = false;
+  bool retriedNoGpu_ = false;
+  fs::path exe_;
+  std::string args_;
 
   static fs::path findBrowser() {
     // Explicit override (also how the tests substitute a fake browser).
