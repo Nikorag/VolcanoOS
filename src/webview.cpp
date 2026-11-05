@@ -35,7 +35,7 @@ class BrowserAppWebView : public WebView {
       if (home) profile = fs::path(home) / ".var" / "app" / exe.filename() / "data" / "zonto-web-profile";
     }
     std::string args = "--app=" + url + " --user-data-dir=" + profile.string() +
-                       " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required";
+                       " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --enable-logging=stderr";
     if (fullscreen) args += " --start-fullscreen";
     (void)title;
     openedAt_ = nowSeconds();
@@ -44,6 +44,7 @@ class BrowserAppWebView : public WebView {
     retriedNoGpu_ = false;
     exe_ = exe;
     args_ = args;
+    logf("starting browser: %s %s", exeStr.c_str(), args.substr(0, args.find("--app=") + 40).c_str());
     // The URL carries a launch ticket; args are whitespace-split, which is
     // fine because Zonto play URLs never contain spaces.
     return proc_.spawn(exe, dataDir(), args, dataDir() / "logs" / "web.log", err);
@@ -60,7 +61,7 @@ class BrowserAppWebView : public WebView {
         retriedNoGpu_ = true;
         std::string err;
         logf("browser crashed after %.1fs (exit %d); retrying without the GPU", up, code);
-        if (proc_.spawn(exe_, dataDir(), args_ + " --disable-gpu", dataDir() / "logs" / "web.log", err)) {
+        if (proc_.spawn(exe_, dataDir(), args_ + " --disable-gpu", dataDir() / "logs" / "web-retry.log", err)) {
           openedAt_ = nowSeconds();
           endedEarly_ = false;
           return true;
