@@ -101,9 +101,9 @@ void App::frame(double now, float dt) {
         signInError_ = upper(device_.error());
         device_.reset();
         break;
-      case DeviceSignIn::State::Unsupported:  // server without the device flow: use this device's browser
+      case DeviceSignIn::State::Unsupported:
+        signInError_ = "THIS SERVER DOES NOT SUPPORT PHONE SIGN-IN";
         device_.reset();
-        startBrowserSignIn();
         break;
       case DeviceSignIn::State::Cancelled:
         device_.reset();
@@ -206,7 +206,6 @@ void App::drawDeviceSignIn(double now) {
     t.align = Align::Center;
     gfx_.text("GETTING YOUR CODE", W / 2, py + ph / 2 + 24, t);
   } else {
-    ui::prompt(gfx_, ps, Action::Y, "USE THIS DEVICE'S BROWSER", hx, hintY, 22);
 
     // QR of the prefilled verification URL, 1 px per module so scaling stays crisp.
     if (code.verificationUrlComplete != qrFor_) {
@@ -310,7 +309,6 @@ void App::drawSignIn(double now) {
     const float bw = std::max(380.f, 120.f + gfx_.measure(label, head(66 * 0.40f, theme::text, 4)).x);
     ui::button(gfx_, W / 2 - bw / 2, py + 124, bw, 66, label, theme::magma, true, now);
     std::vector<std::pair<Action, std::string>> keys = {{Action::Accept, api_.hasToken() ? "TRY AGAIN" : "SIGN IN"}};
-    if (!api_.hasToken()) keys.push_back({Action::Y, "USE THIS DEVICE'S BROWSER"});
     float total = 0;
     for (auto& k : keys) total += ui::promptWidth(gfx_, input_.style(), k.first, k.second, 20) + 44;
     float kx = W / 2 - (total - 44) / 2;

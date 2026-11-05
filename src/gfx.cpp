@@ -555,13 +555,33 @@ Vec2 Gfx::text(const std::string& s, float x, float y, const TextStyle& st) {
   float cx = st.align == Align::Center ? x - m.x / 2 : st.align == Align::Right ? x - m.x : x;
   SDL_SetTextureColorMod(e->tex, st.color.r, st.color.g, st.color.b);
   SDL_SetTextureAlphaMod(e->tex, st.color.a);
+  // Draw in whole device pixels at 1:1 (no render scale, no filtering): a fractional edge would
+  // blend neighbouring slices and leave seams through the letters.
+  float sx_ = 1, sy_ = 1;
+  SDL_RenderGetScale(r_, &sx_, &sy_);
+  SDL_Rect clip{};
+  const bool clipped = SDL_RenderIsClipEnabled(r_) == SDL_TRUE;
+  if (clipped) SDL_RenderGetClipRect(r_, &clip);
+  SDL_RenderSetScale(r_, 1, 1);
+  if (clipped) {
+    SDL_Rect pc{static_cast<int>(std::floor(clip.x * sx_)), static_cast<int>(std::floor(clip.y * sy_)),
+                static_cast<int>(std::ceil(clip.w * sx_)), static_cast<int>(std::ceil(clip.h * sy_))};
+    SDL_RenderSetClipRect(r_, &pc);
+  }
+  SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeNearest);
+  const int baseX = static_cast<int>(std::lround(cx * sx_));
+  const int baseY = static_cast<int>(std::lround(y * sy_));
+  const float trackPx = st.tracking * scale_;
   for (size_t k = 0; k + 1 < e->cuts.size(); ++k) {
     int sx = e->cuts[k], sw = e->cuts[k + 1] - sx;
     if (sw <= 0) continue;
     SDL_Rect src{sx, 0, sw, e->h};
-    SDL_FRect d{cx + sx / scale_ + st.tracking * static_cast<float>(k), y, sw / scale_, e->h / scale_};
-    SDL_RenderCopyF(r_, e->tex, &src, &d);
+    SDL_Rect d{baseX + sx + static_cast<int>(std::lround(trackPx * static_cast<float>(k))), baseY, sw, e->h};
+    SDL_RenderCopy(r_, e->tex, &src, &d);
   }
+  SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeLinear);
+  SDL_RenderSetScale(r_, sx_, sy_);
+  if (clipped) SDL_RenderSetClipRect(r_, &clip);
   return m;
 }
 

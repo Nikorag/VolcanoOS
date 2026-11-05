@@ -881,9 +881,6 @@ void App::handleAction(Action a) {
       if (phoneBusy || browserBusy || signInBusy_) return;
       if (api_.hasToken()) resolveAccount();  // offline retry
       else startSignIn();
-    } else if (a == Action::Y) {
-      // Same sign-in through this device's own browser (needs a keyboard or mouse).
-      if (!phoneBusy && !browserBusy && !signInBusy_ && !api_.hasToken()) startBrowserSignIn();
     } else if (a == Action::Back) {
       if (phoneBusy) device_.cancel();
       if (signin_.state() == SignInFlow::State::Waiting) signin_.cancel();
