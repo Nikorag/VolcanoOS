@@ -1,6 +1,6 @@
 # Zonto Volcano
 
-**Volcano OS** is the software for the **Zonto Volcano** console: a controller-first "Big Picture" launcher for [Zonto Games](https://www.nikorag.co.uk), written in C++17 with SDL2.
+**Volcano OS** is the software for the **Zonto Volcano** console: a controller-first standalone games console for [Zonto Games](https://www.nikorag.co.uk), written in C++17 with SDL2.
 
 - **Sign in on your phone:** the launcher shows a code and a QR (OAuth 2.0 device authorization grant, RFC 8628, `zonto-launcher` client); approve it on your phone and the console is signed in, no keyboard needed. Access tokens last an hour and refresh automatically with a rotating refresh token, so a console used at least every two months stays signed in. The browser flow (authorization code + PKCE over a loopback redirect) remains as a fallback (`Y` on the sign-in screen). Credentials go in the macOS Keychain (0600 file elsewhere).
 - **Library** from `GET /api/library?platform=&arch=`, cached for offline use.
@@ -35,7 +35,7 @@ A portable build for the Steam Deck (and any x86_64 Linux desktop):
 - **Gaming Mode:** in Steam, *Add a Non-Steam Game*, browse to the AppImage (set the file filter to "All files"). Steam Input hands the launcher your controller.
 - **Web games and sign-in fallback** open in a Chromium-family browser: install *Chromium* from Discover (Flatpak). The launcher finds Flatpak browsers automatically.
 - Native games need `linux/x86_64` builds on Zonto (no Proton).
-- **Leaving a game:** hold Start + Select (Menu + View on the Deck). A web game closes straight away; a native game opens the Volcano OS menu in front of it (Resume / back to the launcher / quit).
+- **Leaving a game:** hold Start + Select (Menu + View on the Deck). A web game closes straight away; a native game opens the Volcano OS menu in front of it (Resume / back to Volcano OS / quit).
 - **Troubleshooting:** the launcher keeps a log at `~/.local/share/zonto/volcanoos/logs/volcano.log` (the previous run in `volcano.log.1`), and the browser's output in `web.log` next to it.
 
 It is built on Debian bookworm so it runs against any newer glibc, including SteamOS's. It has not been run on a real Deck yet; the AppImage was checked in a clean container (libraries bundled, fonts present, renders a frame at 1280x800).

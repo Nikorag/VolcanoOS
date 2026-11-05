@@ -9,6 +9,8 @@ install -m 644 files/volcano.service "${ROOTFS_DIR}/etc/systemd/system/volcano.s
 install -d "${ROOTFS_DIR}/usr/libexec/volcano"
 install -m 755 files/volcano-session "${ROOTFS_DIR}/usr/libexec/volcano/session"
 install -m 755 files/xdg-open "${ROOTFS_DIR}/usr/local/bin/xdg-open"
+install -d "${ROOTFS_DIR}/usr/share/plymouth/themes/volcano"
+install -m 644 files/plymouth/volcano/* "${ROOTFS_DIR}/usr/share/plymouth/themes/volcano/"
 install -d "${ROOTFS_DIR}/etc/chromium.d"
 install -m 644 files/chromium-volcano "${ROOTFS_DIR}/etc/chromium.d/volcano"
 install -d "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
@@ -21,7 +23,10 @@ install -m 644 files/networkmanager-volcano.conf "${ROOTFS_DIR}/etc/NetworkManag
 # Quiet, flicker-free boot straight into the launcher, and a regulatory domain
 # so the Wi-Fi radio is not left blocked on first boot.
 COUNTRY="${WPA_COUNTRY:-GB}"
-sed -i "1s/\$/ quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=0 cfg80211.ieee80211_regdom=${COUNTRY}/" \
+# `splash` starts the Plymouth boot animation; console output is moved off tty1 and
+# systemd's [ OK ] status lines are switched off so nothing flashes over it.
+sed -i "s/console=tty1/console=tty3/" "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
+sed -i "1s/\$/ quiet splash plymouth.ignore-serial-consoles systemd.show_status=false rd.systemd.show_status=false loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=0 cfg80211.ieee80211_regdom=${COUNTRY}/" \
 	"${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 cat >> "${ROOTFS_DIR}/boot/firmware/config.txt" <<'EOF'
 

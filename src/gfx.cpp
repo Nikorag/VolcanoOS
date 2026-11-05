@@ -41,22 +41,6 @@ uint32_t nextCodepoint(const std::string& s, size_t& i) {
   return cp;
 }
 
-std::string encodeUtf8(uint32_t cp) {
-  std::string o;
-  if (cp < 0x80) o += static_cast<char>(cp);
-  else if (cp < 0x800) { o += static_cast<char>(0xC0 | (cp >> 6)); o += static_cast<char>(0x80 | (cp & 0x3f)); }
-  else if (cp < 0x10000) {
-    o += static_cast<char>(0xE0 | (cp >> 12));
-    o += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
-    o += static_cast<char>(0x80 | (cp & 0x3f));
-  } else {
-    o += static_cast<char>(0xF0 | (cp >> 18));
-    o += static_cast<char>(0x80 | ((cp >> 12) & 0x3f));
-    o += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
-    o += static_cast<char>(0x80 | (cp & 0x3f));
-  }
-  return o;
-}
 
 SDL_Color sc(Color c) { return SDL_Color{c.r, c.g, c.b, c.a}; }
 
@@ -438,22 +422,47 @@ Gfx::TexEntry* Gfx::stringTex(TTF_Font* f, const FontKey& fk, const std::string&
   SDL_Surface* surf = wrapPx > 0 ? TTF_RenderUTF8_Blended_Wrapped(f, s.c_str(), white, static_cast<Uint32>(wrapPx))
                                  : TTF_RenderUTF8_Blended(f, s.c_str(), white);
   if (surf) {
-    e.tex = SDL_CreateTextureFromSurface(r_, surf);
     e.w = surf->w;
     e.h = surf->h;
-    SDL_FreeSurface(surf);
-    if (e.tex) SDL_SetTextureBlendMode(e.tex, SDL_BLENDMODE_BLEND);
     if (wrapPx <= 0) {
-      // x offset of every code point boundary (kerning included), for letter-spaced drawing.
+      // Where each code point starts (kerning included), for letter-spaced drawing. Glyph ink can
+      // overhang its advance, so each boundary snaps to the nearest fully transparent pixel column:
+      // cutting through ink would leave gaps in the letters.
+      std::vector<bool> blank(static_cast<size_t>(e.w), true);
+      if (surf->format->BytesPerPixel == 4 && SDL_LockSurface(surf) == 0) {
+        const Uint32 amask = surf->format->Amask;
+        for (int y = 0; y < e.h; ++y) {
+          const Uint32* row = reinterpret_cast<const Uint32*>(static_cast<const Uint8*>(surf->pixels) + y * surf->pitch);
+          for (int x = 0; x < e.w; ++x)
+            if (row[x] & amask) blank[static_cast<size_t>(x)] = false;
+        }
+        SDL_UnlockSurface(surf);
+      }
       size_t i = 0;
+      int prev = 0;
       e.cuts.push_back(0);
       while (i < s.size()) {
         nextCodepoint(s, i);
-        int pw = 0, ph = 0;
-        TTF_SizeUTF8(f, s.substr(0, i).c_str(), &pw, &ph);
-        e.cuts.push_back(i >= s.size() ? e.w : std::min(pw, e.w));
+        int cut = e.w;
+        if (i < s.size()) {
+          int pw = 0, ph = 0;
+          TTF_SizeUTF8(f, s.substr(0, i).c_str(), &pw, &ph);
+          pw = std::clamp(pw, prev, e.w);
+          const int reach = std::max(2, fk.px / 3);
+          int best = pw, bestD = reach + 1;
+          for (int x = std::max(prev, pw - reach); x <= std::min(e.w, pw + reach); ++x) {
+            if (x < e.w && !blank[static_cast<size_t>(x)]) continue;
+            if (std::abs(x - pw) < bestD) bestD = std::abs(x - pw), best = x;
+          }
+          cut = best;
+        }
+        e.cuts.push_back(cut);
+        prev = cut;
       }
     }
+    e.tex = SDL_CreateTextureFromSurface(r_, surf);
+    SDL_FreeSurface(surf);
+    if (e.tex) SDL_SetTextureBlendMode(e.tex, SDL_BLENDMODE_BLEND);
   }
   e.used = frame_;
   return &(strings_[key] = e);

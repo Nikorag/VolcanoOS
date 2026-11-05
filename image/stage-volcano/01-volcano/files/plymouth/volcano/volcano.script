@@ -1,0 +1,63 @@
+# Volcano OS boot animation: the logo breathes over a magma glow, with an ember
+# bar sweeping underneath. Matches the launcher's background (theme::bg).
+
+Window.SetBackgroundTopColor(0.043, 0.035, 0.031);
+Window.SetBackgroundBottomColor(0.043, 0.035, 0.031);
+
+sw = Window.GetWidth();
+sh = Window.GetHeight();
+cx = sw / 2;
+cy = sh / 2;
+
+# Scale everything off a 1080p design so it looks the same on any screen.
+k = sh / 1080;
+if (k < 0.5) k = 0.5;
+
+glow.image = Image("glow.png");
+glow.w = Math.Int(900 * k);
+glow.image = glow.image.Scale(glow.w, glow.w);
+glow.sprite = Sprite(glow.image);
+glow.sprite.SetPosition(cx - glow.w / 2, cy - glow.w / 2 - 40 * k, 0);
+
+logo.image = Image("logo.png");
+logo.w = Math.Int(logo.image.GetWidth() * k);
+logo.h = Math.Int(logo.image.GetHeight() * k);
+logo.image = logo.image.Scale(logo.w, logo.h);
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetPosition(cx - logo.w / 2, cy - logo.h / 2 - 60 * k, 10);
+
+bar.w = Math.Int(420 * k);
+bar.h = Math.Int(6 * k);
+if (bar.h < 2) bar.h = 2;
+bar.x = cx - bar.w / 2;
+bar.y = cy + logo.h / 2 + 20 * k;
+track.sprite = Sprite(Image("track.png").Scale(bar.w, bar.h));
+track.sprite.SetPosition(bar.x, bar.y, 5);
+track.sprite.SetOpacity(0.5);
+seg.w = Math.Int(bar.w * 0.3);
+seg.image = Image("bar.png").Scale(seg.w, bar.h);
+seg.sprite = Sprite(seg.image);
+
+frame = 0;
+fun refresh() {
+  frame++;
+  t = frame / 50;  # the refresh callback runs ~50 times a second
+
+  # Fade in over the first half second, then breathe.
+  fade = t * 2;
+  if (fade > 1) fade = 1;
+  pulse = 0.5 + 0.5 * Math.Sin(t * 2.6);
+  glow.sprite.SetOpacity(fade * (0.35 + 0.45 * pulse));
+  logo.sprite.SetOpacity(fade * (0.88 + 0.12 * pulse));
+
+  # Ember sweeps left to right, easing in and out, then repeats.
+  p = (t / 1.6) % 1;
+  e = 0.5 - 0.5 * Math.Cos(p * 3.14159);
+  seg.sprite.SetPosition(bar.x + (bar.w - seg.w) * e, bar.y, 6);
+  seg.sprite.SetOpacity(fade);
+}
+Plymouth.SetRefreshFunction(refresh);
+
+# Boot messages and passwords are never shown on this console.
+fun message_callback(text) { }
+Plymouth.SetMessageFunction(message_callback);

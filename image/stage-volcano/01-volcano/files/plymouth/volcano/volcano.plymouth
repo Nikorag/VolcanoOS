@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Volcano OS
+Description=Zonto Volcano boot animation
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/volcano
+ScriptFile=/usr/share/plymouth/themes/volcano/volcano.script

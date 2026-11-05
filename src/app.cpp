@@ -155,6 +155,12 @@ int App::run() {
     openConfirm(t, m, ok, std::move(fn));
   };
   sh.tick = [this] { input_.tick(0.1f, 12); };
+  // Joined Wi-Fi from the sign-in screen (first boot): go straight back and show the phone code + QR.
+  sh.wifiConnected = [this] {
+    if (screen_ != Screen::System || sysReturn_ != Screen::SignIn || api_.hasToken() || signInBusy_) return;
+    closeSystem();
+    startSignIn();
+  };
   sh.padCount = [this] { return input_.padCount(); };
   sys_ = std::make_unique<SystemPages>(gfx_, *netctl_, *pool_, main_, std::move(sh));
   bg_.init();
@@ -1039,8 +1045,13 @@ void App::checkFirstRunNetwork() {
   pool_->run<NetStatus>(
       main_, [this] { return netctl_->status(); },
       [this](NetStatus s) {
-        if (!s.supported || !s.wifiPresent || s.online || s.knownWifi > 0) return;
         if (screen_ != Screen::SignIn) return;
+        // Already online (Ethernet, or saved Wi-Fi): show the code + QR straight away.
+        if (s.online) {
+          if (!api_.hasToken() && device_.state() == DeviceSignIn::State::Idle) startSignIn();
+          return;
+        }
+        if (!s.supported || !s.wifiPresent || s.knownWifi > 0) return;
         toast("CONNECT TO WI-FI TO SIGN IN", theme::warn, 8);
         openSystem(SysTab::Wifi);
       });

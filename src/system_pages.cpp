@@ -319,8 +319,10 @@ void SystemPages::runConnect(const std::string& ssid, const std::string& pw, boo
       main_, [this, ssid, pw, hidden] { return net_.wifiConnect(ssid, pw, hidden); },
       [this, ssid, pw, wasKnown](NetOp r) {
         busy_.clear();
-        if (r.ok) ok("CONNECTED TO " + upper(ssid));
-        else if (wasKnown && pw.empty() && r.error == "WRONG PASSWORD") bad("WRONG PASSWORD. PRESS X TO FORGET IT, THEN TRY AGAIN");
+        if (r.ok) {
+          ok("CONNECTED TO " + upper(ssid));
+          if (h_.wifiConnected) h_.wifiConnected();
+        } else if (wasKnown && pw.empty() && r.error == "WRONG PASSWORD") bad("WRONG PASSWORD. PRESS X TO FORGET IT, THEN TRY AGAIN");
         else bad(r.error);
         refreshWifi(false);
       });

@@ -29,6 +29,13 @@ systemctl enable NetworkManager.service bluetooth.service
 # Bluetooth firmware loader on Pi 3/4/Zero W (no-op elsewhere).
 systemctl enable hciuart.service 2>/dev/null || true
 
+# Boot animation: select the theme and rebuild the initramfs (if the image has one)
+# so it shows as early as possible.
+plymouth-set-default-theme volcano
+if command -v update-initramfs >/dev/null 2>&1; then
+	update-initramfs -u -k all || true
+fi
+
 # Boot straight into Volcano OS on tty1 (no login prompt).
 systemctl enable volcano.service
 systemctl set-default multi-user.target

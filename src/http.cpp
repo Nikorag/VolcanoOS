@@ -12,7 +12,7 @@ void httpGlobalCleanup() { curl_global_cleanup(); }
 
 namespace {
 
-const char* kUserAgent = "ZontoVolcano/" VOS_VERSION " VolcanoOS (Zonto Games launcher)";
+const char* kUserAgent = "ZontoVolcano/" VOS_VERSION " VolcanoOS (standalone console for Zonto Games)";
 
 // A libcurl bundled into an AppImage was built for another distro's certificate layout, so
 // point it at whichever system CA bundle exists. null = leave the library default alone.

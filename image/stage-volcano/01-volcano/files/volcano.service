@@ -1,6 +1,6 @@
 [Unit]
 Description=Volcano OS (Zonto Volcano launcher)
-After=systemd-user-sessions.service systemd-logind.service getty@tty1.service
+After=systemd-user-sessions.service systemd-logind.service getty@tty1.service plymouth-start.service
 Wants=NetworkManager.service bluetooth.service
 # The launcher owns the screen; no login prompt on tty1.
 Conflicts=getty@tty1.service
@@ -27,6 +27,9 @@ Environment=XDG_SESSION_CLASS=user
 # Start even with no keyboard/mouse attached (controller-only console).
 Environment=WLR_LIBINPUT_NO_DEVICES=1
 # -s lets a plugged-in keyboard reach tty2 (Ctrl+Alt+F2) for rescue.
+# Hand the screen from the boot animation to cage: leave the last frame up so there is
+# no flash of console between the two. (Leading "-": fine if Plymouth is not running.)
+ExecStartPre=-/usr/bin/plymouth quit --retain-splash
 ExecStart=/usr/bin/cage -s -d -- /usr/libexec/volcano/session
 Restart=always
 RestartSec=2

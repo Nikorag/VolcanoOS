@@ -38,3 +38,6 @@ dbus-user-session
 chromium
 fonts-liberation
 fonts-noto-color-emoji
+
+# Boot animation (replaces the scrolling [ OK ] console output).
+plymouth

@@ -25,6 +25,7 @@ class SystemPages {
     std::function<void(const std::string& title, const std::string& msg, const std::string& okLabel,
                        std::function<void()> onOk)> confirm;
     std::function<void()> tick;
+    std::function<void()> wifiConnected;  // a join just succeeded
     std::function<int()> padCount;  // controllers SDL can currently see
   };
 

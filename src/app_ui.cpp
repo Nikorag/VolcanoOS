@@ -163,7 +163,7 @@ static void wordmark(Gfx& g, float cx, float y, float size, double now, bool tag
     g.text("VOLCANO OS", cx, y + m.y + size * 0.10f, t);
     TextStyle u = mono(size * 0.15f, theme::dim, size * 0.045f);
     u.align = Align::Center;
-    g.text("THE ZONTO GAMES BIG PICTURE LAUNCHER", cx, y + m.y + size * 0.10f + size * 0.34f, u);
+    g.text("THE STANDALONE CONSOLE FOR ZONTO GAMES", cx, y + m.y + size * 0.10f + size * 0.34f, u);
   }
   (void)now;
 }
@@ -914,8 +914,8 @@ void App::drawPanel(Gfx& g, double now) {
     g.text(g.ellipsize(gameStatus_, st, pw - 280), px + pw - 36, py + 146, st);
   }
 
-  const char* labels3[3] = {"RESUME GAME", "SWITCH TO LAUNCHER", quitArmed_ ? "PRESS AGAIN TO QUIT" : "QUIT GAME"};
-  const char* labels2[2] = {"RESUME GAME", "EXIT TO LAUNCHER"};
+  const char* labels3[3] = {"RESUME GAME", "SWITCH TO VOLCANO OS", quitArmed_ ? "PRESS AGAIN TO QUIT" : "QUIT GAME"};
+  const char* labels2[2] = {"RESUME GAME", "EXIT TO VOLCANO OS"};
   float y = py + 190;
   for (int i = 0; i < static_cast<int>(items); ++i) {
     bool on = i == panelSel_;

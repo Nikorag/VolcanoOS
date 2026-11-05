@@ -1,7 +1,7 @@
 # Volcano OS SD-card image
 
 Builds a flashable image: Raspberry Pi OS Lite (bookworm, 64-bit) with the desktop
-stripped out, booting straight into the Volcano OS launcher. Supports Raspberry Pi
+stripped out, booting straight into Volcano OS, a standalone console for Zonto Games. Supports Raspberry Pi
 3, 4, 5 and Zero 2 W.
 
 What's in it:
