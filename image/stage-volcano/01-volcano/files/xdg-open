@@ -7,4 +7,4 @@ case "$1" in
   *) echo "xdg-open: only http(s) URLs are supported" >&2; exit 1 ;;
 esac
 exec chromium --app="$1" --user-data-dir="$HOME/.local/share/zonto/volcanoos/web-profile" \
-  --no-first-run --no-default-browser-check
+  --no-first-run --no-default-browser-check --password-store=basic

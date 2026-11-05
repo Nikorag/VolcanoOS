@@ -36,6 +36,10 @@ class BrowserAppWebView : public WebView {
     }
     std::string args = "--app=" + url + " --user-data-dir=" + profile.string() +
                        " --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --enable-logging=stderr";
+#ifdef __linux__
+    // No desktop keyring on a console: without this Chromium pops up a "choose a keyring password" dialog.
+    args += " --password-store=basic";
+#endif
 #ifndef __linux__
     // Not on Linux: the kiosk compositor (cage) already makes every window fullscreen, and
     // asking Chromium for it as well makes the browser abort at start-up (SIGTRAP).
