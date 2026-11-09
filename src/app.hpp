@@ -27,6 +27,7 @@
 #include "pages.hpp"
 #include "runner.hpp"
 #include "system_pages.hpp"
+#include "widgets.hpp"
 #include "util.hpp"
 #include "webview.hpp"
 
@@ -80,6 +81,22 @@ class App {
     double openedAt = 0;
     std::function<void(int)> onPick;
   };
+  struct CcItem {
+    std::string label;
+    int id;
+    ui::Icon icon;
+    bool enabled = true;
+    bool danger = false;
+  };
+  struct ControlCenter {
+    bool open = false;
+    double openedAt = 0;
+    int row = 1;   // 0 = status cards, 1 = action buttons
+    int card = 0;  // focused card
+    int sel = 0;   // focused action
+    bool signedIn = false;
+    std::vector<CcItem> items;
+  };
   enum class SessionKind { None, Native, WebGame };
   struct Session {
     SessionKind kind = SessionKind::None;
@@ -132,6 +149,10 @@ class App {
   void drawShelf(double now, float dt);
   void drawTile(const GameEntry& g, float cx, float cy, float size, float focus, double now, bool selected);
   void drawHints(double now);
+  void openControlCenter();
+  void handleControlCenter(Action a);
+  void drawControlCenter(double now);
+  void drawTitleBar(const std::string& title);
   void drawToasts(double now);
   void drawMenu(double now);
   void drawSession(double now);
@@ -248,6 +269,11 @@ class App {
   double inputGraceUntil_ = 0;  // drop non-Home input until then (just after a session or a focus change)
   double lastLaunchAt_ = 0;
   Menu menu_;
+  ControlCenter cc_;
+  NetStatus ccNet_;
+  bool ccNetLoaded_ = false;
+  int homeFocus_ = 1;  // Home cursor row: 0 filter tabs, 1 library tiles, 2 action buttons
+  int homeAct_ = 0;    // in the action row: 0 primary, 1 options
   std::deque<Toast> toasts_;
 
   uint64_t frameNo_ = 0;

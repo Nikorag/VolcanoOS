@@ -33,19 +33,19 @@ struct Color {
 // Volcano OS palette: basalt blacks, magma oranges, with Zonto's signal green
 // kept for "online / installed / ready".
 namespace theme {
-constexpr Color bg{11, 9, 8};
-constexpr Color panel{24, 19, 17};
-constexpr Color panelHi{38, 30, 26};
-constexpr Color line{64, 49, 41};
-constexpr Color text{245, 237, 229};
-constexpr Color dim{160, 142, 129};
-constexpr Color faint{132, 117, 105};
-constexpr Color magma{255, 106, 31};
-constexpr Color ember{255, 178, 71};
+constexpr Color bg{14, 11, 10};
+constexpr Color panel{28, 22, 19};
+constexpr Color panelHi{44, 34, 28};
+constexpr Color line{255, 240, 230, 30};  // hairline borders: warm white at ~12%
+constexpr Color text{247, 241, 236};
+constexpr Color dim{201, 189, 180};
+constexpr Color faint{169, 157, 148};
+constexpr Color magma{255, 107, 44};
+constexpr Color ember{255, 154, 102};
 constexpr Color lava{226, 52, 28};
-constexpr Color ok{61, 232, 140};  // Zonto signal green
+constexpr Color ok{123, 224, 164};  // soft signal green
 constexpr Color warn{255, 204, 77};
-constexpr Color err{255, 92, 79};
+constexpr Color err{255, 154, 138};
 }  // namespace theme
 
 enum class Font { Mono, Head };
@@ -102,6 +102,8 @@ class Gfx {
   // ---- images ---------------------------------------------------------------
   void image(SDL_Texture* t, float x, float y, float w, float h, float alpha = 1.f);
   void cover(SDL_Texture* t, int tw, int th, float x, float y, float w, float h, float alpha = 1.f, float focusY = 0.5f);
+  // Cover-fit image clipped to a rounded rectangle.
+  void imageRound(SDL_Texture* t, int tw, int th, float x, float y, float w, float h, float r, float alpha = 1.f);
   void contain(SDL_Texture* t, int tw, int th, float x, float y, float w, float h, float alpha = 1.f);
   // Cover-fit image whose edges dissolve into whatever is behind it. Feathers
   // are fractions of the destination size (0 = hard edge).

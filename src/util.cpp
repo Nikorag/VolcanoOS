@@ -121,10 +121,10 @@ std::string humanBytes(uint64_t b) {
 }
 
 std::string humanPlaytime(int minutes) {
-  if (minutes <= 0) return "NOT PLAYED";
+  if (minutes <= 0) return "Not played";
   char buf[32];
-  if (minutes < 60) std::snprintf(buf, sizeof buf, "%dM", minutes);
-  else std::snprintf(buf, sizeof buf, "%dH %02dM", minutes / 60, minutes % 60);
+  if (minutes < 60) std::snprintf(buf, sizeof buf, "%dm", minutes);
+  else std::snprintf(buf, sizeof buf, "%dh %02dm", minutes / 60, minutes % 60);
   return buf;
 }
 

@@ -22,7 +22,7 @@
 Layout rule (enforced): a key prompt never sits on top of text, a button or another prompt, and a button's label always fits inside it. `tools/ui-lint.sh` renders every demo screen at 16:9 and at the Deck's 16:10 with `--ui-lint` and fails on any violation.
 
 Options: `--shot out.png --press right,right,a` renders a scripted demo frame to PNG. See `--help`.
-Fonts: JetBrains Mono and Archivo (OFL) in `assets/fonts`.
+Fonts: Figtree (OFL) in `assets/fonts`.
 
 ## Console image (Raspberry Pi)
 `./image/build.sh` builds an SD-card image: stripped Raspberry Pi OS Lite that boots straight into Volcano OS, with controller support, networking, and native **Wi-Fi** and **Bluetooth** pages in the launcher (Start -> Network / Bluetooth). See [image/README.md](image/README.md).

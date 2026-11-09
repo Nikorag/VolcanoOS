@@ -27,6 +27,7 @@ class SystemPages {
     std::function<void()> tick;
     std::function<void()> wifiConnected;  // a join just succeeded
     std::function<int()> padCount;  // controllers SDL can currently see
+    std::function<void()> quit;     // leave Volcano OS
   };
 
   SystemPages(Gfx& g, NetCtl& net, Pool& pool, MainQueue& main, Hooks hooks)
@@ -70,7 +71,7 @@ class SystemPages {
   bool handleAbout(Action a);
   void drawAbout(double now, PadStyle st);
 
-  void hints(PadStyle st, const std::vector<std::pair<Action, std::string>>& items);
+  void drawRail();
   void drawBusy(float x, float y, float w, const std::string& text, double now);
   void ok(const std::string& s) { h_.toast(s, theme::ok); }
   void bad(const std::string& s) { h_.toast(s, theme::err); }
@@ -81,6 +82,7 @@ class SystemPages {
   MainQueue& main_;
   Hooks h_;
   SysTab tab_ = SysTab::Wifi;
+  bool railFocus_ = false;  // cursor is on the section list, not the content
 
   // Wi-Fi state
   NetStatus st_;

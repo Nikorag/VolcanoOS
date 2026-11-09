@@ -52,10 +52,10 @@ bool Gfx::init(SDL_Window* w, SDL_Renderer* r) {
   // Static instances of the variable fonts, with overlapping contours removed: SDL_ttf/FreeType on
   // Debian 12 (the Pi) leaves white slits in synthetically emboldened variable-font glyphs.
   const auto fonts = assetDir() / "fonts";
-  monoPath_ = (fonts / "JetBrainsMono-Regular.ttf").string();
-  monoBoldPath_ = (fonts / "JetBrainsMono-Bold.ttf").string();
-  headPath_ = (fonts / "Archivo-Regular.ttf").string();
-  headBoldPath_ = (fonts / "Archivo-Bold.ttf").string();
+  monoPath_ = (fonts / "Figtree-SemiBold.ttf").string();
+  monoBoldPath_ = (fonts / "Figtree-Bold.ttf").string();
+  headPath_ = (fonts / "Figtree-Medium.ttf").string();
+  headBoldPath_ = (fonts / "Figtree-ExtraBold.ttf").string();
   SDL_SetRenderDrawBlendMode(r_, SDL_BLENDMODE_BLEND);
 
   // One soft radial falloff reused for every glow, ember and halo.
@@ -319,6 +319,31 @@ void Gfx::cover(SDL_Texture* t, int tw, int th, float x, float y, float w, float
   SDL_SetTextureAlphaMod(t, static_cast<Uint8>(std::min(1.f, alpha) * 255));
   SDL_FRect d{x, y, w, h};
   SDL_RenderCopyF(r_, t, &src, &d);
+}
+
+void Gfx::imageRound(SDL_Texture* t, int tw, int th, float x, float y, float w, float h, float r, float alpha) {
+  if (!t || tw <= 0 || th <= 0 || alpha <= 0) return;
+  float s = std::max(w / tw, h / th);
+  float u0 = (1 - (w / s) / tw) / 2, u1 = 1 - u0, v0 = (1 - (h / s) / th) / 2, v1 = 1 - v0;
+  thread_local std::vector<SDL_FPoint> p;
+  thread_local std::vector<SDL_Vertex> v;
+  thread_local std::vector<int> idx;
+  p.clear(); v.clear(); idx.clear();
+  perimeter(x, y, w, h, r, 8, p);
+  auto vert = [&](float px, float py) {
+    SDL_Vertex vx;
+    vx.position = {px, py};
+    vx.color = SDL_Color{255, 255, 255, static_cast<Uint8>(std::min(1.f, alpha) * 255)};
+    vx.tex_coord = {u0 + (u1 - u0) * (px - x) / w, v0 + (v1 - v0) * (py - y) / h};
+    return vx;
+  };
+  v.push_back(vert(x + w / 2, y + h / 2));
+  for (auto& pt : p) v.push_back(vert(pt.x, pt.y));
+  int n = static_cast<int>(p.size());
+  for (int i = 0; i < n; ++i) idx.insert(idx.end(), {0, 1 + i, 1 + (i + 1) % n});
+  SDL_SetTextureColorMod(t, 255, 255, 255);
+  SDL_SetTextureAlphaMod(t, 255);
+  SDL_RenderGeometry(r_, t, v.data(), static_cast<int>(v.size()), idx.data(), static_cast<int>(idx.size()));
 }
 
 void Gfx::contain(SDL_Texture* t, int tw, int th, float x, float y, float w, float h, float alpha) {

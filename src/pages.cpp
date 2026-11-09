@@ -21,7 +21,7 @@ TextStyle mono(float size, Color c, float tracking = 0) {
   t.font = Font::Mono;
   t.size = size;
   t.color = c;
-  t.tracking = tracking;
+  t.tracking = tracking * 0.3f;  // Figtree reads best nearly unspaced
   return t;
 }
 TextStyle head(float size, Color c, float tracking = 0, bool bold = true) {
@@ -29,7 +29,7 @@ TextStyle head(float size, Color c, float tracking = 0, bool bold = true) {
   t.font = Font::Head;
   t.size = size;
   t.color = c;
-  t.tracking = tracking;
+  t.tracking = tracking * 0.3f;  // Figtree reads best nearly unspaced
   t.bold = bold;
   return t;
 }
@@ -50,7 +50,7 @@ bool jbool(const json& j, const char* k, bool d) {
 // "2026-10-28T20:11:00.000Z" -> "28 OCT 2026"
 std::string fmtDate(const std::string& iso) {
   if (iso.size() < 10) return "";
-  static const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+  static const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   int m = std::atoi(iso.substr(5, 2).c_str());
   if (m < 1 || m > 12) return "";
   return std::to_string(std::atoi(iso.substr(8, 2).c_str())) + " " + months[m - 1] + " " + iso.substr(0, 4);
@@ -85,26 +85,11 @@ void toggle(Gfx& g, float x, float y, bool on) {
   g.circle(x + (on ? w - h / 2 : h / 2), y + h / 2, h / 2 - 5, on ? Color(20, 10, 6) : theme::dim);
 }
 
-void medal(Gfx& g, float cx, float cy, float r, bool unlocked, double now) {
-  if (unlocked) {
-    g.glow(cx, cy, r * 2.2f, r * 2.2f, theme::ember.alpha(0.25f));
-    g.circle(cx, cy, r, Color(64, 38, 18));
-    g.ring(cx, cy, r, 3, theme::ember);
-    g.line(cx - r * 0.38f, cy + 1, cx - r * 0.08f, cy + r * 0.34f, 3, theme::ember);
-    g.line(cx - r * 0.08f, cy + r * 0.34f, cx + r * 0.42f, cy - r * 0.32f, 3, theme::ember);
-  } else {
-    g.circle(cx, cy, r, theme::panel);
-    g.ring(cx, cy, r, 2, theme::line);
-    g.rrect(cx - r * 0.28f, cy - r * 0.05f, r * 0.56f, r * 0.42f, 3, theme::faint);
-    g.arc(cx, cy - r * 0.08f, r * 0.26f, 3, 3.14159f, 6.28318f, theme::faint);
-  }
-  (void)now;
-}
 
 }  // namespace
 
 const char* Pages::label(int i) {
-  static const char* l[kTabs] = {"ACHIEVEMENTS", "SOCIAL", "PROFILE"};
+  static const char* l[kTabs] = {"Achievements", "Social", "Profile"};
   return l[i];
 }
 
@@ -522,88 +507,126 @@ void Pages::draw(double now, float dt, PadStyle st) {
 }
 
 void Pages::drawAch(double now, PadStyle st) {
+  (void)st;
   const float W = g_.W();
+  const float left = 72, aw = 540, top = 140, bottom = 970;
   if (!achLoaded_) {
-    drawEmpty(achLoading_ ? "LOADING ACHIEVEMENTS" : "NOTHING TO SHOW", "", achLoading_, now);
-    hints(st, {});
+    drawEmpty(achLoading_ ? "Loading achievements" : "Nothing to show", "", achLoading_, now);
     return;
   }
-  // Summary strip.
-  float y = kTop + 8;
-  struct S { std::string l, v; Color c; };
-  std::vector<S> sum = {{"UNLOCKED", std::to_string(achUnlocked_) + " / " + std::to_string(achTotal_), theme::ember},
-                        {"COMPLETED TITLES", std::to_string(achPerfect_), theme::text},
-                        {"COMPLETION", achTotal_ ? std::to_string(achUnlocked_ * 100 / achTotal_) + "%" : "0%", theme::text}};
-  float sx = kMargin;
-  for (auto& s : sum) {
-    g_.text(s.l, sx, y, mono(13, theme::faint, 3.5f));
-    float w = g_.text(s.v, sx, y + 22, head(40, s.c, 1)).x;
-    sx += std::max(w, 160.f) + 60;
-  }
-  ui::progressBar(g_, W - kMargin - 420, y + 34, 420, 8, achTotal_ ? static_cast<float>(achUnlocked_) / achTotal_ : 0, theme::ember);
-
-  float top = y + 92, bottom = kBottom;
-  float lw = 560, rx = kMargin + lw + 36, rw = W - kMargin - rx;
-  panel(g_, kMargin, top, lw, bottom - top, !inItems_);
-  panel(g_, rx, top, rw, bottom - top, inItems_);
   if (groups_.empty()) {
-    TextStyle t = head(26, theme::dim, 4);
-    g_.text("NO ACHIEVEMENTS YET", kMargin + 36, top + 40, t);
-    hints(st, {});
+    drawEmpty("No achievements yet", "Play a game and they will show up here.", false, now);
     return;
   }
 
-  // Left: games.
-  const float rh = 88;
-  int rows = static_cast<int>((bottom - top - 24) / rh);
-  int first = std::max(0, std::min(gSel_ - rows / 2, static_cast<int>(groups_.size()) - rows));
-  for (int i = first; i < static_cast<int>(groups_.size()) && i < first + rows; ++i) {
+  // ---- left: summary + games ----
+  const int pct = achTotal_ ? achUnlocked_ * 100 / achTotal_ : 0;
+  ui::glass(g_, left, top, aw, 176, 32, 1.f, 0.7f);
+  {
+    float cx = left + 28 + 60, cy = top + 88;
+    g_.circle(cx, cy, 60, Color(247, 241, 236, 36));
+    if (pct > 0) g_.arc(cx, cy, 55, 10, -1.5708f, -1.5708f + 6.2832f * pct / 100.f, theme::magma);
+    g_.circle(cx, cy, 50, Color(28, 22, 19));
+    TextStyle p = head(30, theme::text, 0);
+    p.align = Align::Center;
+    std::string ps = std::to_string(pct) + "%";
+    g_.text(ps, cx, cy - g_.measure(ps, p).y / 2, p);
+    float tx = left + 28 + 120 + 28;
+    g_.text(std::to_string(achUnlocked_) + " of " + std::to_string(achTotal_), tx, top + 34, head(34, theme::text, 0));
+    g_.text("achievements unlocked", tx, top + 80, head(20, theme::dim, 0, false));
+    std::string chip = std::to_string(achPerfect_) + (achPerfect_ == 1 ? " game completed" : " games completed");
+    TextStyle cs = head(17, theme::ok, 0);
+    float cw = g_.measure(chip, cs).x + 28;
+    g_.rrect(tx, top + 118, cw, 34, 17, Color(123, 224, 164, 36));
+    g_.text(chip, tx + 14, top + 118 + (34 - g_.measure(chip, cs).y) / 2, cs);
+  }
+  const float lt = top + 176 + 20, rh = 104, rg = 10;
+  const int rows = std::max(1, static_cast<int>((bottom - lt + rg) / (rh + rg)));
+  int ng = static_cast<int>(groups_.size());
+  int first = std::max(0, std::min(gSel_ - rows + 1, ng - rows));
+  if (gSel_ < first) first = gSel_;
+  for (int i = first; i < ng && i < first + rows; ++i) {
     const AchGroup& gr = groups_[i];
-    float ry = top + 12 + (i - first) * rh;
-    rowBg(g_, kMargin + 10, ry, lw - 20, rh - 8, i == gSel_, !inItems_);
-    TextStyle n = head(22, i == gSel_ ? theme::text : theme::dim, 2.5f);
-    g_.text(g_.ellipsize(gr.name, n, lw - 190), kMargin + 36, ry + 10, n);
+    float ry = lt + (i - first) * (rh + rg);
+    bool on = i == gSel_;
+    if (on) {
+      g_.rrect(left, ry, aw, rh, 26, Color(255, 244, 236, inItems_ ? 18 : 26));
+      if (!inItems_) ui::focusRing(g_, left, ry, aw, rh, 26);
+    }
+    ui::placeholder(g_, left + 14, ry + 14, 76, 76, gr.name);
     bool done = gr.total > 0 && gr.unlocked == gr.total;
-    TextStyle c = mono(16, done ? theme::ok : theme::dim, 2);
+    TextStyle n = head(22, theme::text, 0);
+    g_.text(g_.ellipsize(gr.name, n, aw - 220), left + 110, ry + 20, n);
+    TextStyle c = head(18, done ? theme::ok : theme::dim, 0);
     c.align = Align::Right;
-    g_.text(std::to_string(gr.unlocked) + " / " + std::to_string(gr.total), kMargin + lw - 30, ry + 14, c);
-    ui::progressBar(g_, kMargin + 36, ry + 50, lw - 72, 6, gr.total ? static_cast<float>(gr.unlocked) / gr.total : 0, done ? theme::ok : theme::ember);
+    g_.text(std::to_string(gr.unlocked) + " of " + std::to_string(gr.total), left + aw - 22, ry + 24, c);
+    ui::progressBar(g_, left + 110, ry + 66, aw - 110 - 22, 6, gr.total ? static_cast<float>(gr.unlocked) / gr.total : 0,
+                    done ? theme::ok : theme::magma, Color(247, 241, 236, 36));
   }
 
-  // Right: achievements of the selected game.
+  // ---- right: the selected game's achievements ----
+  const float rx = 652, rw = W - 72 - rx;
   const AchGroup& gr = groups_[gSel_];
-  TextStyle ht = head(30, theme::text, 4);
-  g_.text(g_.ellipsize(gr.name, ht, rw - 80), rx + 36, top + 26, ht);
-  g_.rect(rx + 36, top + 82, rw - 72, 1, theme::line);
-  const float ah = 100;
-  float avail = bottom - (top + 96) - 12;
-  int arows = std::max(1, static_cast<int>(avail / ah));
+  g_.text("Achievements", rx + 4, top + 6, head(20, theme::dim, 0, false));
+  TextStyle ht = head(60, theme::text, 0);
+  g_.text(g_.ellipsize(gr.name, ht, rw - 320), rx + 4, top + 34, ht);
+  {
+    bool done = gr.total > 0 && gr.unlocked == gr.total;
+    TextStyle c = head(22, done ? theme::ok : theme::dim, 0);
+    c.align = Align::Right;
+    std::string t = std::to_string(gr.unlocked) + " of " + std::to_string(gr.total) + " unlocked";
+    g_.text(t, rx + rw - 4, top + 76, c);
+  }
+  const float it0 = top + 118, ah = 116, ag = 12;
+  const int arows = std::max(1, static_cast<int>((bottom - it0 + ag) / (ah + ag)));
   int n = static_cast<int>(gr.items.size());
   aSel_ = std::max(0, std::min(aSel_, n - 1));
-  int afirst = std::max(0, std::min(aSel_ - arows / 2, n - arows));
+  int afirst = std::max(0, std::min(aSel_ - arows + 1, n - arows));
+  if (aSel_ < afirst) afirst = aSel_;
   for (int i = afirst; i < n && i < afirst + arows; ++i) {
     const Ach& a = gr.items[i];
     bool got = !a.unlockedAt.empty();
-    float ry = top + 96 + (i - afirst) * ah;
-    rowBg(g_, rx + 10, ry, rw - 20, ah - 8, inItems_ && i == aSel_, true);
-    medal(g_, rx + 64, ry + (ah - 8) / 2, 26, got, now);
-    TextStyle n1 = head(22, got ? theme::text : theme::dim, 2);
-    g_.text(g_.ellipsize(upper(a.name), n1, rw - 420), rx + 112, ry + 12, n1);
-    TextStyle d1 = head(18, theme::faint, 0, false);
-    g_.text(g_.ellipsize(a.desc, d1, rw - 420), rx + 112, ry + 46, d1);
-    TextStyle r1 = mono(14, got ? theme::ember : theme::faint, 2);
-    r1.align = Align::Right;
+    bool rare = got && a.rarity > 0 && a.rarity < 15;
+    float ry = it0 + (i - afirst) * (ah + ag);
+    ui::glass(g_, rx, ry, rw, ah, 28, 1.f, 0.72f);
+    if (inItems_ && i == aSel_) ui::focusRing(g_, rx, ry, rw, ah, 28);
+    float cx = rx + 28 + 36, cy = ry + ah / 2;
+    if (rare) {
+      g_.glow(cx, cy, 70, 70, theme::magma.alpha(0.35f));
+      g_.circle(cx, cy, 36, theme::magma);
+      g_.circle(cx, cy, 30, Color(255, 154, 102));
+      ui::icon(g_, ui::Icon::Trophy, cx, cy, 34, Color(26, 14, 8));
+    } else if (got) {
+      g_.circle(cx, cy, 36, Color(255, 154, 102, 41));
+      ui::icon(g_, ui::Icon::Trophy, cx, cy, 34, theme::ember);
+    } else {
+      g_.circle(cx, cy, 36, Color(247, 241, 236, 15));
+      ui::icon(g_, ui::Icon::Lock, cx, cy, 30, Color(140, 129, 122));
+    }
+    float tx = rx + 28 + 72 + 24;
+    TextStyle n1 = head(26, got ? theme::text : theme::dim, 0);
+    g_.text(g_.ellipsize(a.name, n1, rw - 560), tx, ry + 24, n1);
+    if (rare) {
+      float nw = g_.measure(g_.ellipsize(a.name, n1, rw - 560), n1).x;
+      TextStyle rs = head(15, theme::ember, 0);
+      g_.rrect(tx + nw + 12, ry + 26, g_.measure("Rare", rs).x + 24, 28, 14, Color(255, 107, 44, 46));
+      g_.text("Rare", tx + nw + 24, ry + 26 + (28 - g_.measure("Rare", rs).y) / 2, rs);
+    }
+    g_.text(g_.ellipsize(a.desc, head(20, theme::dim, 0, false), rw - 560), tx, ry + 64, head(20, theme::dim, 0, false));
     char buf[48];
-    std::snprintf(buf, sizeof buf, "%.1f%% OF PLAYERS", a.rarity);
-    g_.text(buf, rx + rw - 36, ry + 18, r1);
-    TextStyle u1 = mono(13, got ? theme::ok : theme::faint, 2);
+    std::snprintf(buf, sizeof buf, "%.1f%% of players", a.rarity);
+    TextStyle r1 = head(20, theme::text, 0);
+    r1.align = Align::Right;
+    g_.text(buf, rx + rw - 28, ry + 30, r1);
+    TextStyle u1 = head(18, theme::faint, 0, false);
     u1.align = Align::Right;
-    g_.text(got ? "UNLOCKED " + fmtDate(a.unlockedAt) : "LOCKED", rx + rw - 36, ry + 50, u1);
+    g_.text(got ? "Unlocked " + fmtDate(a.unlockedAt) : "Locked", rx + rw - 28, ry + 66, u1);
   }
   if (n > arows) {
-    g_.text(std::to_string(aSel_ + 1) + " / " + std::to_string(n), rx + rw - 36, top + 36, [] { auto t = mono(14, theme::faint, 2); t.align = Align::Right; return t; }());
+    TextStyle c = head(18, theme::faint, 0, false);
+    c.align = Align::Right;
+    g_.text(std::to_string(aSel_ + 1) + " / " + std::to_string(n), rx + rw - 4, top + 6, c);
   }
-  hints(st, {{Action::Y, "REFRESH"}});
 }
 
 void Pages::drawSocial(double now, PadStyle st) {

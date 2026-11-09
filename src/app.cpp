@@ -162,6 +162,7 @@ int App::run() {
     startSignIn();
   };
   sh.padCount = [this] { return input_.padCount(); };
+  sh.quit = [this] { running_ = false; };
   sys_ = std::make_unique<SystemPages>(gfx_, *netctl_, *pool_, main_, std::move(sh));
   bg_.init();
   input_.init();
@@ -238,6 +239,7 @@ int App::run() {
             float py = e.button.y * (static_cast<float>(oh) / wh) / gfx_.scale();
             for (auto& h : hits_) {
               if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
+                homeFocus_ = 1;
                 if (h.idx == sel_) input_.push(Action::Accept);
                 else sel_ = h.idx;
                 break;
@@ -829,6 +831,11 @@ void App::handleAction(Action a) {
     if (!osk_.isOpen()) SDL_StopTextInput();
     return;
   }
+  // The control center sits above Home.
+  if (cc_.open && !menu_.open) {
+    handleControlCenter(a);
+    return;
+  }
   // Menus own input while open.
   if (menu_.open) {
     int n = static_cast<int>(menu_.items.size());
@@ -913,15 +920,33 @@ void App::handleAction(Action a) {
   if (screen_ != Screen::Home) return;
 
   int n = static_cast<int>(view_.size());
+  auto setFilter = [&](int f) {
+    filter_ = static_cast<Filter>(f);
+    sel_ = 0;
+    cam_ = 0;
+    rebuildView();
+    input_.tick(0.15f, 20);
+  };
+  if (n == 0) homeFocus_ = 0;
   switch (a) {
     case Action::Left:
-      if (sel_ > 0) { --sel_; input_.tick(0.1f, 12); }
+    case Action::Right: {
+      const int d = a == Action::Right ? 1 : -1;
+      if (homeFocus_ == 1) {
+        if (sel_ + d >= 0 && sel_ + d < n) { sel_ += d; input_.tick(0.1f, 12); }
+      } else if (homeFocus_ == 0) {
+        int f = static_cast<int>(filter_) + d;
+        if (f >= 0 && f < 3) setFilter(f);
+      } else {
+        homeAct_ = std::max(0, std::min(1, homeAct_ + d));
+      }
       break;
-    case Action::Right:
-      if (sel_ + 1 < n) { ++sel_; input_.tick(0.1f, 12); }
-      break;
+    }
     case Action::Up:
+      if (homeFocus_ > 0) { --homeFocus_; input_.tick(0.1f, 12); }
+      break;
     case Action::Down:
+      if (homeFocus_ < (n ? 2 : 0)) { ++homeFocus_; input_.tick(0.1f, 12); }
       break;
     case Action::LB:
     case Action::RB: {
@@ -935,7 +960,11 @@ void App::handleAction(Action a) {
       break;
     }
     case Action::Accept:
-      if (const GameEntry* g = selected()) doPrimary(*g);
+      if (homeFocus_ == 0) homeFocus_ = n ? 1 : 0;
+      else if (const GameEntry* g = selected()) {
+        if (homeFocus_ == 2 && homeAct_ == 1) openGameMenu();
+        else doPrimary(*g);
+      }
       break;
     case Action::X:
       if (selected()) openGameMenu();
@@ -1064,39 +1093,91 @@ void App::checkFirstRunNetwork() {
       });
 }
 
-void App::openSystemMenu() {
-  menu_ = Menu{};
-  menu_.open = true;
-  menu_.title = "VOLCANO OS";
-  menu_.openedAt = nowSeconds();
-  enum { Achievements = 1, Social, Profile, Refresh, Network, Bluetooth, Fullscreen, SignOut, Quit };
-  bool in = screen_ == Screen::Home;
+void App::openSystemMenu() { openControlCenter(); }
+
+void App::openControlCenter() {
+  cc_ = ControlCenter{};
+  cc_.open = true;
+  cc_.openedAt = nowSeconds();
+  cc_.signedIn = screen_ == Screen::Home;
+  enum { Achievements = 1, Social, Profile, Refresh, Network, Bluetooth, Fullscreen, SignOut, Power };
+  const bool in = cc_.signedIn;
+  const bool online = !offline_ || opt_.demo;
   if (in) {
-    menu_.items.push_back({"ACHIEVEMENTS", "Everything you've unlocked", Achievements, !offline_ || opt_.demo});
-    menu_.items.push_back({"SOCIAL", "Friends, requests and messages", Social, !offline_ || opt_.demo});
-    menu_.items.push_back({"PROFILE", "Your stats, privacy and devices", Profile, !offline_ || opt_.demo});
-    menu_.items.push_back({"REFRESH LIBRARY", "", Refresh, !offline_});
+    cc_.items.push_back({"Achievements", Achievements, ui::Icon::Trophy, online});
+    cc_.items.push_back({"Social", Social, ui::Icon::Users, online});
+    cc_.items.push_back({"Profile", Profile, ui::Icon::User, online});
+    cc_.items.push_back({"Refresh library", Refresh, ui::Icon::Refresh, !offline_});
   }
   // Always offered, including on the sign-in screen: with no network there is nothing else to do.
-  menu_.items.push_back({"NETWORK", "Wi-Fi and Ethernet", Network});
-  menu_.items.push_back({"BLUETOOTH", "Controllers and other devices", Bluetooth});
-  menu_.items.push_back({fullscreen_ ? "SWITCH TO WINDOWED" : "SWITCH TO FULLSCREEN", "F11", Fullscreen});
-  if (in) menu_.items.push_back({"SIGN OUT", player_.gamertag.empty() ? "" : "Signed in as " + player_.gamertag, SignOut, true, true});
-  menu_.items.push_back({"QUIT VOLCANO OS", "", Quit});
-  menu_.sel = 0;
-  menu_.onPick = [this](int id) {
-    switch (id) {
-      case Achievements: openPage(PageTab::Achievements); break;
-      case Social: openPage(PageTab::Social); break;
-      case Profile: openPage(PageTab::Profile); break;
-      case Refresh: refreshLibrary(false); break;
-      case Network: openSystem(SysTab::Wifi); break;
-      case Bluetooth: openSystem(SysTab::Bluetooth); break;
-      case Fullscreen: setFullscreen(!fullscreen_); break;
-      case SignOut: signOut(); break;
-      case Quit: running_ = false; break;
+  cc_.items.push_back({"Network", Network, ui::Icon::Wifi});
+  cc_.items.push_back({"Bluetooth", Bluetooth, ui::Icon::Bluetooth});
+  cc_.items.push_back({fullscreen_ ? "Windowed" : "Full screen", Fullscreen, ui::Icon::Expand});
+  if (in) cc_.items.push_back({"Sign out", SignOut, ui::Icon::SignOut, true, true});
+  cc_.items.push_back({"Power", Power, ui::Icon::Power});
+  cc_.row = 1;
+  cc_.sel = 0;
+  ccNetLoaded_ = false;
+  pool_->run<NetStatus>(
+      main_, [this] { return netctl_->status(); },
+      [this](NetStatus st) {
+        ccNet_ = st;
+        ccNetLoaded_ = true;
+      });
+}
+
+void App::handleControlCenter(Action a) {
+  const int nCards = player_.gamertag.empty() ? 2 : 3;
+  const int nItems = static_cast<int>(cc_.items.size());
+  const bool hasCards = true;
+  enum { Achievements = 1, Social, Profile, Refresh, Network, Bluetooth, Fullscreen, SignOut, Power };
+  switch (a) {
+    case Action::Left:
+    case Action::Right: {
+      const int d = a == Action::Right ? 1 : -1;
+      if (cc_.row == 0) cc_.card = std::max(0, std::min(nCards - 1, cc_.card + d));
+      else cc_.sel = std::max(0, std::min(nItems - 1, cc_.sel + d));
+      input_.tick(0.1f, 12);
+      break;
     }
-  };
+    case Action::Up:
+      if (cc_.row == 1 && hasCards) { cc_.row = 0; input_.tick(0.1f, 12); }
+      break;
+    case Action::Down:
+      if (cc_.row == 0) { cc_.row = 1; input_.tick(0.1f, 12); }
+      break;
+    case Action::Accept: {
+      if (cc_.row == 0) {
+        // Cards: [profile], network, controller.
+        int idx = cc_.card + (player_.gamertag.empty() ? 1 : 0);
+        cc_.open = false;
+        if (idx == 0) openPage(PageTab::Profile);
+        else if (idx == 1) openSystem(SysTab::Wifi);
+        else openSystem(SysTab::Bluetooth);
+        break;
+      }
+      const CcItem it = cc_.items[cc_.sel];
+      if (!it.enabled) { input_.tick(0.15f, 20); break; }
+      cc_.open = false;
+      switch (it.id) {
+        case Achievements: openPage(PageTab::Achievements); break;
+        case Social: openPage(PageTab::Social); break;
+        case Profile: openPage(PageTab::Profile); break;
+        case Refresh: refreshLibrary(false); break;
+        case Network: openSystem(SysTab::Wifi); break;
+        case Bluetooth: openSystem(SysTab::Bluetooth); break;
+        case Fullscreen: setFullscreen(!fullscreen_); break;
+        case SignOut: signOut(); break;
+        case Power: openSystem(SysTab::About); break;
+      }
+      input_.tick(0.2f, 25);
+      break;
+    }
+    case Action::Back:
+    case Action::Start:
+    case Action::Home: cc_.open = false; break;
+    default: break;
+  }
 }
 
 }  // namespace vos

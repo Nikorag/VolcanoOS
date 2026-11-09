@@ -30,6 +30,19 @@ Color tint(const std::string& slug);
 // Notched panel corner ticks used to frame focused things.
 void cornerTicks(Gfx& g, float x, float y, float w, float h, float len, float thick, Color c);
 
+// Line icons (drawn from primitives) used across Control center and Settings.
+enum class Icon { Trophy, Users, User, Refresh, Wifi, Bluetooth, Expand, SignOut, Power, Clock, Gamepad, Plus, Lock, Restart, Quit };
+void icon(Gfx& g, Icon i, float cx, float cy, float size, Color c);
+
+// Translucent warm-black card with a hairline border.
+void glass(Gfx& g, float x, float y, float w, float h, float r, float alpha = 1.f, float fill = 0.74f);
+// White focus ring hugging a rounded rect (drawn outside it).
+void focusRing(Gfx& g, float x, float y, float w, float h, float r, float alpha = 1.f);
+// Orange on/off switch, 68x38.
+void toggleSwitch(Gfx& g, float x, float y, bool on, float alpha = 1.f);
+// Spinner arc.
+void spinner(Gfx& g, float cx, float cy, float r, double now);
+
 float easeOut(float t);
 float lerp(float a, float b, float t);
 

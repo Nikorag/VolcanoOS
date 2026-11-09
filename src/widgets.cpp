@@ -96,7 +96,7 @@ float glyph(Gfx& g, PadStyle style, Action a, float x, float y, float size, floa
     std::string lbl = keyLabel(a);
     ts.font = Font::Mono;
     ts.size = size * 0.62f;
-    ts.tracking = 1;
+    ts.tracking = 0.4f;
     float tw = g.measure(lbl, ts).x;
     float w = std::max(size * 1.15f, tw + size * 0.7f);
     if (draw) {
@@ -146,7 +146,7 @@ float glyph(Gfx& g, PadStyle style, Action a, float x, float y, float size, floa
   std::string lbl = padLabel(style, a);
   ts.font = Font::Mono;
   ts.size = size * 0.58f;
-  ts.tracking = 1;
+  ts.tracking = 0.4f;
   float tw = g.measure(lbl, ts).x;
   float w = tw + size * 0.9f, h = size * 1.05f;
   if (draw) {
@@ -161,38 +161,15 @@ float glyph(Gfx& g, PadStyle style, Action a, float x, float y, float size, floa
 
 }  // namespace
 
-float promptWidth(Gfx& g, PadStyle style, Action a, const std::string& label, float size) {
-  float w = glyph(g, style, a, 0, 0, size, 1, false);
-  if (label.empty()) return w;
-  TextStyle ts;
-  ts.size = size * 0.78f;
-  ts.tracking = 2.4f;
-  return w + size * 0.5f + g.measure(label, ts).x;
-}
+// Button prompts are no longer shown anywhere (the UI is driven by focus alone).
+float promptWidth(Gfx&, PadStyle, Action, const std::string&, float) { return 0; }
 
-float prompt(Gfx& g, PadStyle style, Action a, const std::string& label, float x, float y, float size, float alpha) {
-  g.lintMute(1);  // the glyph's and label's inner text count as one prompt box, registered below
-  float w = glyph(g, style, a, x, y, size, alpha, true);
-  float total = w;
-  const float gh = size * 1.15f;
-  if (!label.empty()) {
-    TextStyle ts;
-    ts.size = size * 0.78f;
-    ts.tracking = 2.4f;
-    ts.color = theme::dim.alpha(alpha);
-    Vec2 m = g.measure(label, ts);
-    g.text(label, x + w + size * 0.5f, y + (gh - m.y) / 2, ts);
-    total = w + size * 0.5f + m.x;
-  }
-  g.lintMute(-1);
-  g.lintBox(Gfx::Box::Prompt, x, y, total, gh, label.empty() ? "(key)" : label);
-  return total;
-}
+float prompt(Gfx&, PadStyle, Action, const std::string&, float, float, float, float) { return 0; }
 
 float chip(Gfx& g, const std::string& text, float x, float y, Color fg, Color border, float size, Color fill) {
   TextStyle ts;
   ts.size = size;
-  ts.tracking = 2.2f;
+  ts.tracking = 0.6f;
   ts.color = fg;
   Vec2 m = g.measure(text, ts);
   float w = m.x + size * 1.3f, h = size * 1.9f;
@@ -200,6 +177,88 @@ float chip(Gfx& g, const std::string& text, float x, float y, Color fg, Color bo
   g.rrectLine(x, y, w, h, 3, 1.4f, border);
   g.text(text, x + size * 0.65f, y + (h - m.y) / 2, ts);
   return w;
+}
+
+void glass(Gfx& g, float x, float y, float w, float h, float r, float alpha, float fill) {
+  g.rrect(x, y, w, h, r, Color(28, 22, 19, static_cast<uint8_t>(255 * fill * alpha)));
+  g.rrectLine(x, y, w, h, r, 1.2f, theme::line.alpha(alpha));
+}
+
+void focusRing(Gfx& g, float x, float y, float w, float h, float r, float alpha) {
+  g.rrectLine(x - 3, y - 3, w + 6, h + 6, r + 3, 3, Color(255, 255, 255, static_cast<uint8_t>(255 * alpha)));
+}
+
+void toggleSwitch(Gfx& g, float x, float y, bool on, float alpha) {
+  const float w = 68, h = 38;
+  g.rrect(x, y, w, h, h / 2, on ? theme::magma.alpha(alpha) : Color(247, 241, 236, static_cast<uint8_t>(46 * alpha)));
+  g.circle(x + (on ? w - h / 2 : h / 2), y + h / 2, 15, Color(255, 255, 255, static_cast<uint8_t>(255 * alpha)));
+}
+
+void spinner(Gfx& g, float cx, float cy, float r, double now) {
+  g.ring(cx, cy, r, 3, theme::magma.alpha(0.3f));
+  g.arc(cx, cy, r, 3, static_cast<float>(now) * 6, static_cast<float>(now) * 6 + 1.6f, theme::magma);
+}
+
+void icon(Gfx& g, Icon ic, float cx, float cy, float size, Color c) {
+  const float u = size / 24.f, t = std::max(2.f, 2.1f * u);
+  auto L = [&](float x1, float y1, float x2, float y2) { g.line(cx + (x1 - 12) * u, cy + (y1 - 12) * u, cx + (x2 - 12) * u, cy + (y2 - 12) * u, t, c); };
+  auto A = [&](float x, float y, float r, float a0, float a1) { g.arc(cx + (x - 12) * u, cy + (y - 12) * u, r * u, t, a0, a1, c); };
+  const float PI = 3.14159265f;
+  switch (ic) {
+    case Icon::Trophy:
+      g.rrectLine(cx - 6 * u, cy - 10 * u, 12 * u, 13 * u, 5 * u, t, c);
+      L(12, 15, 12, 19); L(8, 21, 16, 21);
+      A(5, 6.5f, 2.5f * 1.0f, PI * 0.5f, PI * 1.5f); A(19, 6.5f, 2.5f, -PI * 0.5f, PI * 0.5f);
+      break;
+    case Icon::Users:
+      g.ring(cx - 3 * u, cy - 5 * u, 3.6f * u, t, c); A(9, 21, 6.5f, PI * 1.05f, PI * 1.95f);
+      A(16, 8, 3.2f, -PI * 0.5f, PI * 0.5f); A(17, 20, 4.5f, PI * 1.15f, PI * 1.6f);
+      break;
+    case Icon::User:
+      g.ring(cx, cy - 5 * u, 4 * u, t, c); A(12, 22, 7.5f, PI * 1.05f, PI * 1.95f);
+      break;
+    case Icon::Refresh:
+      A(12, 12, 8.5f, -PI * 0.1f, PI * 1.35f);
+      L(21, 4, 21, 9); L(21, 9, 16, 9);
+      A(12, 12, 8.5f, PI * 0.9f, PI * 2.35f);
+      L(3, 20, 3, 15); L(3, 15, 8, 15);
+      break;
+    case Icon::Wifi:
+      for (int i = 0; i < 3; ++i) A(12, 20, 5.5f + i * 5.5f, -PI * 0.78f, -PI * 0.22f);
+      g.circle(cx, cy + 8 * u, 1.6f * u, c);
+      break;
+    case Icon::Bluetooth:
+      L(7, 7, 17, 17); L(17, 17, 12, 22); L(12, 22, 12, 2); L(12, 2, 17, 7); L(17, 7, 7, 17);
+      break;
+    case Icon::Expand:
+      L(3, 8, 3, 3); L(3, 3, 8, 3); L(16, 3, 21, 3); L(21, 3, 21, 8);
+      L(3, 16, 3, 21); L(3, 21, 8, 21); L(21, 16, 21, 21); L(21, 21, 16, 21);
+      break;
+    case Icon::SignOut:
+      L(9, 21, 5, 21); L(5, 21, 3, 19); L(3, 19, 3, 5); L(3, 5, 5, 3); L(5, 3, 9, 3);
+      L(21, 12, 9, 12); L(21, 12, 16, 7); L(21, 12, 16, 17);
+      break;
+    case Icon::Power:
+      L(12, 2, 12, 12); A(12, 13, 8.5f, -PI * 0.5f + 0.75f, -PI * 0.5f + 2 * PI - 0.75f);
+      break;
+    case Icon::Clock:
+      g.ring(cx, cy, 9 * u, t, c); L(12, 7, 12, 12); L(12, 12, 15.5f, 14);
+      break;
+    case Icon::Gamepad:
+      g.rrectLine(cx - 10 * u, cy - 6 * u, 20 * u, 12 * u, 5 * u, t, c);
+      L(6, 12, 10, 12); L(8, 10, 8, 14); g.circle(cx + 3 * u, cy + 1 * u, 1.2f * u, c); g.circle(cx + 6 * u, cy - 1 * u, 1.2f * u, c);
+      break;
+    case Icon::Plus: L(12, 5, 12, 19); L(5, 12, 19, 12); break;
+    case Icon::Lock:
+      g.rrect(cx - 6.5f * u, cy - 1 * u, 13 * u, 10.5f * u, 2.5f * u, c); A(12, 11, 4.5f, PI, PI * 2);
+      break;
+    case Icon::Restart:
+      A(12, 12, 8, PI * 0.15f, PI * 1.8f); L(20, 3, 20, 8); L(20, 8, 15, 8);
+      break;
+    case Icon::Quit:
+      L(6, 6, 18, 18); L(18, 6, 6, 18);
+      break;
+  }
 }
 
 void progressBar(Gfx& g, float x, float y, float w, float h, float frac, Color fill, Color track) {
