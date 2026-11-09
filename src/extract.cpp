@@ -33,6 +33,8 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
   ExtractResult res;
   std::error_code ec;
   fs::create_directories(dest, ec);
+  // Canonical, so SECURE_SYMLINKS doesn't trip over a symlinked parent (macOS /var -> /private/var).
+  const fs::path root = fs::weakly_canonical(dest, ec);
 
   struct archive* in = archive_read_new();
   archive_read_support_format_zip(in);
@@ -44,11 +46,12 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
   // Keep permissions (the executable bit matters) and mtimes; never follow
   // symlinks out of the tree, never set ownership.
   archive_write_disk_set_options(out, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_SECURE_SYMLINKS |
-                                         ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS);
+                                         ARCHIVE_EXTRACT_SECURE_NODOTDOT);  // not NOABSOLUTEPATHS: entries are made absolute under root after safeRelative()
   archive_write_disk_set_standard_lookup(out);
 
   if (archive_read_open_filename(in, archivePath.string().c_str(), 1 << 20) != ARCHIVE_OK) {
     res.error = std::string("could not open the archive: ") + archive_error_string(in);
+    logf("extract: %s", res.error.c_str());
     archive_read_free(in);
     archive_write_free(out);
     return res;
@@ -56,6 +59,7 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
 
   struct archive_entry* e = nullptr;
   std::string fail;
+  int entries = 0;
   for (;;) {
     if (cancel && cancel->load()) {
       res.cancelled = true;
@@ -63,6 +67,7 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
     }
     int r = archive_read_next_header(in, &e);
     if (r == ARCHIVE_EOF) {
+      logf("extract: done, %d entries", entries);
       res.ok = true;
       break;
     }
@@ -72,6 +77,7 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
     }
     const char* name = archive_entry_pathname(e);
     std::string rel = name ? name : "";
+    if (++entries <= 5) logf("extract: entry %d '%s' (%lld bytes)", entries, rel.c_str(), static_cast<long long>(archive_entry_size(e)));
     if (!safeRelative(rel)) {
       fail = "archive contains an unsafe path: " + rel;
       break;
@@ -85,10 +91,10 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
       fail = std::string("archive contains an unsafe link: ") + sl;
       break;
     }
-    std::string full = (dest / rel).string();
+    std::string full = (root / rel).string();
     archive_entry_set_pathname(e, full.c_str());
     if (const char* hl = archive_entry_hardlink(e)) {
-      std::string hfull = (dest / hl).string();
+      std::string hfull = (root / hl).string();
       archive_entry_set_hardlink(e, hfull.c_str());
     }
 
@@ -132,6 +138,7 @@ ExtractResult extractArchive(const fs::path& archivePath, const fs::path& dest,
   archive_write_free(out);
 
   if (!fail.empty()) {
+    logf("extract: failed after %d entries: %s", entries, fail.c_str());
     res.ok = false;
     res.error = fail;
   }

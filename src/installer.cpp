@@ -269,12 +269,15 @@ void Installer::runJob(std::shared_ptr<InstallJob> job, BuildInfo expected) {
   fs::remove_all(incoming, ec);
   job->done.store(0);
   job->total.store(static_cast<uint64_t>(fs::file_size(part, ec)));
+  logf("unpacking %s (%llu bytes) into %s", part.string().c_str(),
+       static_cast<unsigned long long>(job->total.load()), incoming.string().c_str());
   ExtractResult x = extractArchive(part, incoming, [&](uint64_t consumed) { job->done.store(consumed); }, &job->cancel);
   if (x.cancelled) {
     fs::remove_all(incoming, ec);
     return finish(job, InstallJob::Cancelled, "Cancelled");
   }
   if (!x.ok) {
+    logf("unpack of %s failed: %s", slug.c_str(), x.error.c_str());
     fs::remove_all(incoming, ec);
     return finish(job, InstallJob::Failed, "Unpack failed: " + x.error);
   }

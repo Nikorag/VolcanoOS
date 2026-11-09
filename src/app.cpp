@@ -1,5 +1,6 @@
 #include "app.hpp"
 
+#include <cctype>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
 
@@ -549,8 +550,15 @@ void App::syncDevice() {
     json j = json::parse(text, nullptr, false);
     if (j.is_object()) key = j.value("deviceKey", "");
   }
-  if (key.empty()) {
+  // The API accepts 8-64 letters, digits or dashes; base64url's '_' is not allowed, so older keys regenerate.
+  auto valid = [](const std::string& k) {
+    if (k.size() < 8 || k.size() > 64) return false;
+    for (char c : k) if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-') return false;
+    return true;
+  };
+  if (!valid(key)) {
     key = randomToken(18);
+    for (char& c : key) if (c == '_') c = '-';
     writeFileAtomic(keyFile, json{{"deviceKey", key}}.dump());
   }
   auto [platform, arch] = buildTarget();

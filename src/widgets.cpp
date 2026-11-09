@@ -204,6 +204,18 @@ void icon(Gfx& g, Icon ic, float cx, float cy, float size, Color c) {
   auto L = [&](float x1, float y1, float x2, float y2) { g.line(cx + (x1 - 12) * u, cy + (y1 - 12) * u, cx + (x2 - 12) * u, cy + (y2 - 12) * u, t, c); };
   auto A = [&](float x, float y, float r, float a0, float a1) { g.arc(cx + (x - 12) * u, cy + (y - 12) * u, r * u, t, a0, a1, c); };
   const float PI = 3.14159265f;
+  // Arc drawn as joined line segments: stays continuous at small radii, unlike a thin ring sector.
+  auto P = [&](float x, float y, float r, float a0, float a1) {
+    const int n = 14;
+    float px = cx + (x - 12 + r * std::cos(a0)) * u, py = cy + (y - 12 + r * std::sin(a0)) * u;
+    for (int i = 1; i <= n; ++i) {
+      float a = a0 + (a1 - a0) * i / n;
+      float qx = cx + (x - 12 + r * std::cos(a)) * u, qy = cy + (y - 12 + r * std::sin(a)) * u;
+      g.line(px, py, qx, qy, t, c);
+      g.circle(qx, qy, t / 2, c);
+      px = qx; py = qy;
+    }
+  };
   switch (ic) {
     case Icon::Trophy:
       g.rrectLine(cx - 6 * u, cy - 10 * u, 12 * u, 13 * u, 5 * u, t, c);
@@ -211,17 +223,18 @@ void icon(Gfx& g, Icon ic, float cx, float cy, float size, Color c) {
       A(5, 6.5f, 2.5f * 1.0f, PI * 0.5f, PI * 1.5f); A(19, 6.5f, 2.5f, -PI * 0.5f, PI * 0.5f);
       break;
     case Icon::Users:
-      g.ring(cx - 3 * u, cy - 5 * u, 3.6f * u, t, c); A(9, 21, 6.5f, PI * 1.05f, PI * 1.95f);
-      A(16, 8, 3.2f, -PI * 0.5f, PI * 0.5f); A(17, 20, 4.5f, PI * 1.15f, PI * 1.6f);
+      g.ring(cx - 3 * u, cy - 5 * u, 3.6f * u, t, c);
+      L(2, 21, 2, 19); P(6, 19, 4, PI, PI * 1.5f); L(6, 15, 12, 15); P(12, 19, 4, PI * 1.5f, PI * 2); L(16, 19, 16, 21);
+      P(16, 7, 4, -1.2f, 1.2f);
+      L(22, 21, 22, 19); P(18, 19, 4, -1.32f, 0);
       break;
     case Icon::User:
-      g.ring(cx, cy - 5 * u, 4 * u, t, c); A(12, 22, 7.5f, PI * 1.05f, PI * 1.95f);
+      g.ring(cx, cy - 5 * u, 3.6f * u, t, c);
+      L(5, 21, 5, 19); P(9, 19, 4, PI, PI * 1.5f); L(9, 15, 15, 15); P(15, 19, 4, PI * 1.5f, PI * 2); L(19, 19, 19, 21);
       break;
     case Icon::Refresh:
-      A(12, 12, 8.5f, -PI * 0.1f, PI * 1.35f);
-      L(21, 4, 21, 9); L(21, 9, 16, 9);
-      A(12, 12, 8.5f, PI * 0.9f, PI * 2.35f);
-      L(3, 20, 3, 15); L(3, 15, 8, 15);
+      A(12, 12, 9, PI, 5.53f); L(18.74f, 5.74f, 21, 8); L(21, 3, 21, 8); L(21, 8, 16, 8);
+      A(12, 12, 9, 0, 2.39f); L(5.26f, 18.26f, 3, 16); L(3, 21, 3, 16); L(3, 16, 8, 16);
       break;
     case Icon::Wifi:
       for (int i = 0; i < 3; ++i) A(12, 20, 5.5f + i * 5.5f, -PI * 0.78f, -PI * 0.22f);

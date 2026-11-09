@@ -701,11 +701,12 @@ void App::drawBadge(const GameEntry& g, float cx, float cy, float r, double now)
 void App::drawTile(const GameEntry& g, float x, float y, float s, float focus, double now, bool selected) {
   const float r = s * 0.22f;
   if (focus > 0.02f) gfx_.glow(x + s / 2, y + s / 2 + 14, s * 0.95f, s * 0.8f, Color(0, 0, 0, 120).alpha(focus));
-  const ArtImage* logo = art_->get(g.logoUrl);
-  if (logo) {
+  // Fill the whole tile with art: the wide key art when there is some, else the logo image.
+  const ArtImage* fill = g.heroUrl.empty() ? nullptr : art_->get(g.heroUrl);
+  if (!fill) fill = art_->get(g.logoUrl);
+  if (fill) {
     gfx_.rrectGrad(x, y, s, s, r, Color(46, 36, 30), Color(30, 23, 19));
-    float pad = s * 0.06f;
-    gfx_.contain(logo->tex, logo->w, logo->h, x + pad, y + pad, s - pad * 2, s - pad * 2, art_->fade(logo, now));
+    gfx_.imageRound(fill->tex, fill->w, fill->h, x, y, s, s, r, art_->fade(fill, now));
   } else {
     ui::placeholder(gfx_, x, y, s, s, g.slug);
   }
