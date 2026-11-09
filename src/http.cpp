@@ -65,6 +65,7 @@ HttpResponse httpRequest(const HttpRequest& req) {
   curl_slist* headers = nullptr;
   if (!req.bearer.empty()) headers = curl_slist_append(headers, ("Authorization: Bearer " + req.bearer).c_str());
   if (!req.contentType.empty()) headers = curl_slist_append(headers, ("Content-Type: " + req.contentType).c_str());
+  for (const auto& h : req.headers) headers = curl_slist_append(headers, h.c_str());
   headers = curl_slist_append(headers, "Accept: application/json");
 
   HeaderSink sink{&out.setCookies};

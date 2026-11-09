@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "api.hpp"
+#include "apps.hpp"
 #include "art.hpp"
 #include "auth.hpp"
 #include "auth_device.hpp"
@@ -43,6 +44,7 @@ struct Options {
   int shotFrame = 150;
   std::string fakeGame;       // demo: really spawn this executable for "native" launches (overlay testing)
   std::string screen;         // demo: "signin" | "menu" | "system"
+  std::string app;            // open this app at start-up without a Zonto account (development)
   std::vector<Action> script; // demo: synthetic inputs, one every few frames
 };
 
@@ -54,14 +56,15 @@ class App {
 
  private:
   // ---- types --------------------------------------------------------------
-  enum class Screen { Boot, SignIn, Home, Pages, System };
-  enum class Kind { Install, Update, Play, PlayWeb, Installing, Running, Unavailable };
+  enum class Screen { Boot, SignIn, Home, Pages, System, App };
+  enum class Kind { Install, Update, Play, PlayWeb, OpenApp, Installing, Running, Unavailable };
   struct Primary {
     Kind kind;
     std::string label;
     bool enabled;
   };
-  enum class Filter { All, Installed, Web };
+  enum class Filter { All, Installed, Web, Apps };
+  static constexpr int kFilters = 4;
   struct Toast {
     std::string text;
     Color color;
@@ -97,7 +100,7 @@ class App {
     bool signedIn = false;
     std::vector<CcItem> items;
   };
-  enum class SessionKind { None, Native, WebGame };
+  enum class SessionKind { None, Native, WebGame, App };
   struct Session {
     SessionKind kind = SessionKind::None;
     std::string slug, name;
@@ -160,6 +163,14 @@ class App {
   void drawMarkOn(Gfx& g, float cx, float cy, float size, double now);
   void drawBadge(const GameEntry& g, float cx, float cy, float r, double now);
 
+  // ---- apps (see apps.hpp) -------------------------------------------------------------------
+  void initApps();
+  static bool isAppSlug(const std::string& slug) { return slug.rfind("app:", 0) == 0; }
+  AppModule* appFor(const std::string& slug) const;
+  void openApp(AppModule* app);
+  bool launchApp(const AppLaunch& l);
+  void appendApps(std::vector<GameEntry>& g) const;
+
   void openGameMenu();
   void openSystemMenu();
   void openPage(PageTab t);
@@ -206,6 +217,10 @@ class App {
   std::unique_ptr<Art> art_;
   std::unique_ptr<Pages> pages_;
   std::unique_ptr<SystemPages> sys_;
+  std::unique_ptr<AppContext> appCtx_;
+  std::vector<std::unique_ptr<AppModule>> apps_;
+  AppModule* activeApp_ = nullptr;   // the app whose screen is open
+  AppModule* sessionApp_ = nullptr;  // the app whose player process is running
   Screen sysReturn_ = Screen::Home;  // where Back from the system screen goes
   Osk osk_;
   Background bg_;

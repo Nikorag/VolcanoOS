@@ -26,6 +26,14 @@ CASES=(
   "achievements|--screen achievements"
   "social|--screen social"
   "profile|--screen profile"
+  "home, apps tab|--press right,right,right"
+  "jellyfin home|--screen jellyfin"
+  "jellyfin library|--screen jellyfin-grid"
+  "jellyfin show|--screen jellyfin-detail"
+  "jellyfin movie|--screen jellyfin-movie"
+  "jellyfin servers|--screen jellyfin-setup"
+  "jellyfin quick connect|--screen jellyfin-code"
+  "jellyfin password|--screen jellyfin-password"
 )
 
 # 16:9 (TV) and 16:10 (Steam Deck): narrower screens are where layouts collide.

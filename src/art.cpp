@@ -56,6 +56,10 @@ const ArtImage* Art::get(const std::string& url) {
       [url]() -> SurfacePtr {
         fs::path p = cachePath(url);
         std::string bytes;
+        if (url.rfind("file://", 0) == 0) {  // bundled artwork: read in place, never cached
+          if (!readFile(url.substr(7), bytes) || bytes.empty()) return nullptr;
+          return decode(bytes);
+        }
         if (!readFile(p, bytes) || bytes.empty()) {
           HttpRequest rq;
           rq.url = url;

@@ -49,6 +49,9 @@ set(VOS_SOURCES
   src/overlay_sdl.cpp
   src/netctl.cpp
   src/system_pages.cpp
+  src/mpv_ipc.cpp
+  src/jellyfin.cpp
+  src/jellyfin_app.cpp
 )
 if(APPLE)
   list(APPEND VOS_SOURCES src/webview_mac.mm src/overlay_mac.mm src/tokenstore_mac.cpp)

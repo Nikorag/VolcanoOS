@@ -30,11 +30,21 @@ GameProcess::~GameProcess() {
 
 #ifdef _WIN32
 
-bool GameProcess::spawn(const fs::path& exe, const fs::path& workdir, const std::string& args, const fs::path&,
+bool GameProcess::spawn(const fs::path& exe, const fs::path& workdir, const std::string& args, const fs::path& logFile,
                         std::string& err, const Env& env) {
+  return spawnArgv(exe, workdir, splitArgs(args), logFile, err, env);
+}
+
+bool GameProcess::spawnArgv(const fs::path& exe, const fs::path& workdir, const std::vector<std::string>& args,
+                            const fs::path&, std::string& err, const Env& env) {
   for (auto& [k, v] : env) _putenv_s(k.c_str(), v.c_str());  // inherited by the child
   std::wstring cmd = L"\"" + exe.wstring() + L"\"";
-  for (auto& a : splitArgs(args)) cmd += L" " + std::wstring(a.begin(), a.end());
+  for (auto& a : args) {
+    std::string q = "\"";
+    for (char c : a) q += (c == '"') ? std::string("\\\"") : std::string(1, c);
+    q += "\"";
+    cmd += L" " + std::wstring(q.begin(), q.end());
+  }
   STARTUPINFOW si{};
   si.cb = sizeof si;
   PROCESS_INFORMATION pi{};
@@ -72,8 +82,12 @@ void GameProcess::forceKill() { terminate(); }  // already unconditional on Wind
 
 bool GameProcess::spawn(const fs::path& exe, const fs::path& workdir, const std::string& args, const fs::path& logFile,
                         std::string& err, const Env& env) {
+  return spawnArgv(exe, workdir, splitArgs(args), logFile, err, env);
+}
+
+bool GameProcess::spawnArgv(const fs::path& exe, const fs::path& workdir, const std::vector<std::string>& extra,
+                            const fs::path& logFile, std::string& err, const Env& env) {
   std::vector<std::string> argv;
-  auto extra = splitArgs(args);
 #ifdef __APPLE__
   if (exe.extension() == ".app") {
     argv = {"/usr/bin/open", "-W", "-a", exe.string()};

@@ -153,6 +153,9 @@ void App::frame(double now, float dt) {
       case Screen::Home: drawHome(now, dt); break;
       case Screen::Pages: drawPages(now); break;
       case Screen::System: drawSystem(now); break;
+      case Screen::App:
+        if (activeApp_) activeApp_->draw(now, dt, input_.style());
+        break;
     }
   }
   renderOverlay(now);
@@ -404,7 +407,8 @@ void App::drawTopBar(double now) {
   // Tabs with shoulder glyphs: library filters on Home, pages elsewhere.
   const bool onPages = screen_ == Screen::Pages;
   const bool onSystem = screen_ == Screen::System;
-  const char* labels[3] = {"All", "Installed", "Web"};
+  const char* labels[4] = {"All", "Installed", "Web", "Apps"};
+  const int nTabs = (onPages || onSystem) ? 3 : kFilters;
   if (onPages || onSystem)
     for (int i = 0; i < 3; ++i) labels[i] = onSystem ? SystemPages::label(i) : Pages::label(i);
   const int activeTab = onSystem ? static_cast<int>(sys_->tab()) : onPages ? static_cast<int>(pages_->tab()) : static_cast<int>(filter_);
@@ -412,7 +416,7 @@ void App::drawTopBar(double now) {
 
   auto tabs = [&](bool draw) {
     float x = navX + 6;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < nTabs; ++i) {
       bool on = activeTab == i;
       TextStyle t = head(19, on ? Color(22, 15, 11) : theme::dim, 0, on);
       if (!on) t.bold = false;
@@ -641,6 +645,15 @@ void App::drawInfo(const GameEntry* g, double now) {
   else if (g->hasBuild) { status = "Not installed"; sub = humanBytes(g->build.sizeBytes) + " download"; }
   else if (g->isWeb()) { status = "Ready to play"; sc = theme::ok; sub = "Plays in the browser"; }
   else { status = "Unavailable"; sc = theme::faint; sub = "Not available on this device"; }
+  if (isAppSlug(g->slug)) {
+    AppModule* app = appFor(g->slug);
+    const std::string st = app ? app->status() : "";
+    c0 = Card{"", "Account", st.empty() ? "Not set up" : st, st.empty() ? theme::dim : theme::text, -1};
+    c1 = Card{"", "Type", "App", theme::text, -1};
+    status = prim.kind == Kind::Running ? "Playing now" : "Ready";
+    sub = "Status";
+    sc = theme::ok;
+  }
   Card c2{"", sub, status, sc, -1};
 
   const float cy0 = 818, cw = 300, ch = 136;
@@ -1050,7 +1063,7 @@ void App::drawGameToasts(Gfx& g, double now) {
 void App::drawPanel(Gfx& g, double now) {
   const float W = g.W();
   float k = ui::easeOut(static_cast<float>((now - panelOpened_) / 0.18));
-  bool native = sess_.kind == SessionKind::Native;
+  bool native = sess_.kind == SessionKind::Native || sess_.kind == SessionKind::App;
   const float pw = 600;
   float items = native ? 3.f : 2.f;
   float ph = 250 + items * 74 + (panelFriends_.empty() ? 0 : 60 + std::min<size_t>(5, panelFriends_.size()) * 40) + 70;
@@ -1080,7 +1093,8 @@ void App::drawPanel(Gfx& g, double now) {
     g.text(g.ellipsize(gameStatus_, st, pw - 280), px + pw - 36, py + 146, st);
   }
 
-  const char* labels3[3] = {"RESUME GAME", "SWITCH TO VOLCANO OS", quitArmed_ ? "PRESS AGAIN TO QUIT" : "QUIT GAME"};
+  const bool isApp = sess_.kind == SessionKind::App;
+  const char* labels3[3] = {isApp ? "RESUME" : "RESUME GAME", "SWITCH TO VOLCANO OS", quitArmed_ ? "PRESS AGAIN TO STOP" : isApp ? "STOP PLAYING" : "QUIT GAME"};
   const char* labels2[2] = {"RESUME GAME", "EXIT TO VOLCANO OS"};
   float y = py + 190;
   for (int i = 0; i < static_cast<int>(items); ++i) {

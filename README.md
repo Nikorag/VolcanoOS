@@ -10,6 +10,7 @@
 - **Native pages, no web content:** Achievements, Social (friends, requests, activity, chat), and Profile (stats, privacy settings, devices) are drawn with SDL from the JSON APIs, with an on-screen keyboard for typing. The Store isn't built yet: it needs new endpoints, see [docs/API-GAPS.md](docs/API-GAPS.md).
 - **Controller first**: Xbox / PlayStation / Nintendo glyphs, stick + d-pad repeat, haptic ticks, keyboard fallback. `Start+Select` (or Guide) = Home: leaves a web game, or offers to quit a native one.
 
+- **Apps:** a small framework (`src/apps.hpp`) lets self-contained apps sit beside games on Home (the **Apps** tab). The first is a native **Jellyfin** client: Quick Connect or password sign-in, Continue watching / Next up / libraries / search, show and season pages, resume and watched sync, played through `mpv`. See [docs/APPS.md](docs/APPS.md).
 - **In-game overlay:** Home (Guide, or hold Start+Select) opens a Volcano OS menu over a running game, and games can send toasts / achievement pop-ups through a loopback bridge. See [docs/GAME-BRIDGE.md](docs/GAME-BRIDGE.md).
 
 ## Build (macOS)

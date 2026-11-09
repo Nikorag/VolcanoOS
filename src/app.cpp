@@ -9,6 +9,7 @@
 #include <cstdlib>
 
 #include "http.hpp"
+#include "jellyfin_app.hpp"
 #include "json.hpp"
 #include "tokenstore.hpp"
 #include "widgets.hpp"
@@ -145,6 +146,7 @@ int App::run() {
   };
   hooks.tick = [this] { input_.tick(0.1f, 12); };
   pages_ = std::make_unique<Pages>(gfx_, api_, *pool_, main_, std::move(hooks));
+  initApps();
   netctl_ = createNetCtl(opt_.demo);
   SystemPages::Hooks sh;
   sh.toast = [this](const std::string& t, Color c) { toast(t, c, 5); };
@@ -272,7 +274,7 @@ int App::run() {
     if (fullscreen_ && now - lastMouseMove_ > 2.5) SDL_ShowCursor(SDL_DISABLE);
 
     // Screenshot-mode scripting: one synthetic input every few frames.
-    if (opt_.demo && scriptPos_ < opt_.script.size() && frameNo_ > 20 && frameNo_ % 6 == 0) input_.push(opt_.script[scriptPos_++]);
+    if ((opt_.demo || !opt_.app.empty()) && scriptPos_ < opt_.script.size() && frameNo_ > 20 && frameNo_ % 6 == 0) input_.push(opt_.script[scriptPos_++]);
 
     // While a game has the screen, F10 (read straight from the keyboard device) opens the Volcano OS menu.
     input_.setBackgroundHotkey(!opt_.demo && sess_.kind != SessionKind::None && !windowFocused_);
@@ -281,6 +283,7 @@ int App::run() {
     while (input_.poll(a)) handleAction(a);
     main_.drain();
     pollSession(now);
+    if (screen_ == Screen::App && activeApp_ && sess_.kind == SessionKind::None) activeApp_->tick(now);
 
     frame(now, dt);
     ++frameNo_;
@@ -355,6 +358,18 @@ void App::boot() {
     if (opt_.screen == "wifi") openSystem(SysTab::Wifi);
     if (opt_.screen == "bluetooth") openSystem(SysTab::Bluetooth);
     if (opt_.screen == "about") openSystem(SysTab::About);
+    if (opt_.screen.rfind("jellyfin", 0) == 0) {  // jellyfin | jellyfin-setup | jellyfin-code
+      if (AppModule* a = appFor("app:jellyfin")) {
+        openApp(a);
+        a->demoScreen(opt_.screen.size() > 9 ? opt_.screen.substr(9) : "");
+      }
+    }
+    return;
+  }
+  if (!opt_.app.empty()) {  // development: straight into an app, no Zonto account needed
+    screen_ = Screen::Home;
+    if (AppModule* a = appFor("app:" + opt_.app)) openApp(a);
+    else logf("--app: no such app '%s'", opt_.app.c_str());
     return;
   }
   auto tok = tokenstore::load();
@@ -511,6 +526,7 @@ void App::applyLibrary(std::vector<GameEntry> g) {
     if (a.lastPlayedAt != b.lastPlayedAt) return a.lastPlayedAt > b.lastPlayedAt;
     return upper(a.name) < upper(b.name);
   });
+  appendApps(g);
   games_ = std::move(g);
   rebuildView();
   if (!keep.empty())
@@ -526,8 +542,10 @@ void App::rebuildView() {
   for (size_t i = 0; i < games_.size(); ++i) {
     const GameEntry& g = games_[i];
     bool ok = true;
-    if (filter_ == Filter::Installed) ok = installer_->installed(g.slug) != nullptr;
-    else if (filter_ == Filter::Web) ok = g.isWeb();
+    const bool isApp = isAppSlug(g.slug);
+    if (filter_ == Filter::Installed) ok = !isApp && installer_->installed(g.slug) != nullptr;
+    else if (filter_ == Filter::Web) ok = !isApp && g.isWeb();
+    else if (filter_ == Filter::Apps) ok = isApp;
     if (ok) view_.push_back(static_cast<int>(i));
   }
   sel_ = std::min(sel_, std::max(0, static_cast<int>(view_.size()) - 1));
@@ -662,6 +680,7 @@ void App::toast(const std::string& text, Color c, double secs) {
 
 App::Primary App::primaryFor(const GameEntry& g) const {
   if (sess_.kind != SessionKind::None && sess_.slug == g.slug) return {Kind::Running, "NOW PLAYING", false};
+  if (isAppSlug(g.slug)) return {Kind::OpenApp, "Open", true};
   if (auto j = installer_->job(g.slug); j && j->active()) return {Kind::Installing, "INSTALLING", false};
   const Installed* inst = installer_->installed(g.slug);
   if (g.hasBuild) {
@@ -692,6 +711,7 @@ void App::doPrimary(const GameEntry& g) {
     case Kind::Update: install(g); break;
     case Kind::Play: launchNative(g); break;
     case Kind::PlayWeb: launchWeb(g); break;
+    case Kind::OpenApp: openApp(appFor(g.slug)); break;
     default: break;
   }
 }
@@ -778,11 +798,18 @@ void App::launchWeb(const GameEntry& g) {
 
 void App::pollSession(double now) {
   if (sess_.kind == SessionKind::None) return;
-  if (sess_.kind == SessionKind::Native) {
+  if (sess_.kind == SessionKind::Native || sess_.kind == SessionKind::App) {
     int code = 0;
     if (proc_.poll(code)) {
       endSession(code != 0, code);
       return;
+    }
+    if (sess_.kind == SessionKind::App) {
+      if (sessionApp_) {
+        sessionApp_->sessionTick(now);
+        gameStatus_ = sessionApp_->sessionStatus();
+      }
+      return;  // not a game: no presence heartbeat, no invites
     }
   } else if (!web_->isOpen()) {
     const bool early = web_->endedEarly();
@@ -811,6 +838,14 @@ void App::endSession(bool crashed, int code) {
   SDL_RaiseWindow(win_);
 
   int minutes = static_cast<int>((nowSeconds() - s.start) / 60);
+  if (s.kind == SessionKind::App) {
+    if (sessionApp_) sessionApp_->sessionEnded(code);
+    sessionApp_ = nullptr;
+    toast(code != 0 && !crashed ? "" : "Welcome back", theme::dim, 2);
+    toasts_.erase(std::remove_if(toasts_.begin(), toasts_.end(), [](const Toast& t) { return t.text.empty(); }), toasts_.end());
+    input_.tick(0.3f, 50);
+    return;
+  }
   pool_->submit([this, s, minutes] {
     api_.presence(std::nullopt);  // explicit null: stopped
     // Wall-clock minutes only when the game doesn't report its own.
@@ -830,7 +865,7 @@ void App::handleAction(Action a) {
   if (!opt_.demo) {  // (demo/screenshot runs have no real window focus to speak of)
     // Another window (a game, the browser) has the screen: those presses are for it. The one
     // exception is Home while a session runs, which is how the player gets back to us.
-    if (!windowFocused_ && !(sess_.kind != SessionKind::None && a == Action::Home)) return;
+    if (!windowFocused_ && sess_.kind != SessionKind::App && !(sess_.kind != SessionKind::None && a == Action::Home)) return;
     if (a != Action::Home && nowSeconds() < inputGraceUntil_) return;
   }
   // The on-screen keyboard sits above everything else.
@@ -870,10 +905,17 @@ void App::handleAction(Action a) {
   // A game is running: Home opens the Volcano OS menu over it.
   if (sess_.kind != SessionKind::None) {
     if (!panel_) {
+      if (sess_.kind == SessionKind::App && a != Action::Home) {
+        if (sessionApp_) sessionApp_->sessionAction(a);  // the app drives its player with the controller
+        return;
+      }
       if (a == Action::Home) {
-        logf("Home pressed during a %s session (native overlay: %s)", sess_.kind == SessionKind::WebGame ? "web" : "native",
-             overlayWin_ ? "yes" : "no");
-        if (!overlayWin_ && sess_.kind == SessionKind::WebGame) {
+        logf("Home pressed during a %s session (native overlay: %s)",
+             sess_.kind == SessionKind::WebGame ? "web" : sess_.kind == SessionKind::App ? "app" : "native", overlayWin_ ? "yes" : "no");
+        if (!overlayWin_ && sess_.kind == SessionKind::App) {
+          toast("Stopping " + sess_.name, theme::dim, 3);  // nothing can be drawn above the player here: Home leaves it
+          proc_.terminate();
+        } else if (!overlayWin_ && sess_.kind == SessionKind::WebGame) {
           // Nothing can be drawn above a browser window here (we can't raise a window over another
           // application on Wayland), so a menu would open invisibly behind it. Home simply leaves the
           // game, which is what the README promises for web titles.
@@ -885,7 +927,7 @@ void App::handleAction(Action a) {
       }
       return;
     }
-    int n = sess_.kind == SessionKind::Native ? 3 : 2;
+    int n = sess_.kind == SessionKind::Native || sess_.kind == SessionKind::App ? 3 : 2;
     if (a == Action::Up || a == Action::Down) {
       panelSel_ = (panelSel_ + (a == Action::Down ? 1 : n - 1)) % n;
       quitArmed_ = false;
@@ -911,6 +953,14 @@ void App::handleAction(Action a) {
       if (signin_.state() == SignInFlow::State::Waiting) signin_.cancel();
     } else if (a == Action::Start || a == Action::Home) {
       openSystemMenu();
+    }
+    return;
+  }
+  if (screen_ == Screen::App) {
+    if (!activeApp_ || a == Action::Home || activeApp_->handle(a)) {
+      screen_ = Screen::Home;
+      screenSince_ = nowSeconds();
+      activeApp_ = nullptr;
     }
     return;
   }
@@ -944,7 +994,7 @@ void App::handleAction(Action a) {
         if (sel_ + d >= 0 && sel_ + d < n) { sel_ += d; input_.tick(0.1f, 12); }
       } else if (homeFocus_ == 0) {
         int f = static_cast<int>(filter_) + d;
-        if (f >= 0 && f < 3) setFilter(f);
+        if (f >= 0 && f < kFilters) setFilter(f);
       } else {
         homeAct_ = std::max(0, std::min(1, homeAct_ + d));
       }
@@ -959,7 +1009,7 @@ void App::handleAction(Action a) {
     case Action::LB:
     case Action::RB: {
       int f = static_cast<int>(filter_);
-      f = (f + (a == Action::RB ? 1 : 2)) % 3;
+      f = (f + (a == Action::RB ? 1 : kFilters - 1)) % kFilters;
       filter_ = static_cast<Filter>(f);
       sel_ = 0;
       cam_ = 0;
@@ -989,6 +1039,70 @@ void App::handleAction(Action a) {
   }
 }
 
+// ---- apps ------------------------------------------------------------------------------
+
+void App::initApps() {
+  AppContext ctx{gfx_, *art_, *pool_, main_, opt_.demo, {}, {}, {}, {}};
+  ctx.toast = [this](const std::string& t, Color col) { toast(t, col, 5); };
+  ctx.text = [this](const std::string& title, const std::string& init, size_t max, std::function<void(const std::string&)> done) {
+    osk_.show(title, init, max, std::move(done));
+    SDL_StartTextInput();
+  };
+  ctx.launch = [this](const AppLaunch& l) { return launchApp(l); };
+  ctx.confirm = [this](const std::string& t, const std::string& m, const std::string& ok, std::function<void()> fn) {
+    openConfirm(t, m, ok, std::move(fn));
+  };
+  appCtx_ = std::make_unique<AppContext>(std::move(ctx));
+  apps_.push_back(std::make_unique<JellyfinApp>(*appCtx_));
+  if (opt_.demo)
+    for (auto& a : apps_) a->loadDemo();
+}
+
+AppModule* App::appFor(const std::string& slug) const {
+  for (auto& a : apps_)
+    if ("app:" + a->info().id == slug) return a.get();
+  return nullptr;
+}
+
+void App::appendApps(std::vector<GameEntry>& g) const {
+  for (auto& a : apps_) {
+    AppModule::Info i = a->info();
+    GameEntry e;
+    e.slug = "app:" + i.id;
+    e.name = i.name;
+    e.tags = "App";
+    e.blurb = i.blurb;
+    e.logoUrl = i.artUrl;  // tile art only: a full-bleed hero would blow the 16:9 art up
+    g.push_back(std::move(e));
+  }
+}
+
+void App::openApp(AppModule* app) {
+  if (!app) return;
+  activeApp_ = app;
+  screen_ = Screen::App;
+  screenSince_ = nowSeconds();
+  app->open();
+}
+
+bool App::launchApp(const AppLaunch& l) {
+  if (!activeApp_ || sess_.kind != SessionKind::None || proc_.running() || nowSeconds() - lastLaunchAt_ < 2) {
+    logf("ignoring a second app launch");
+    return false;
+  }
+  lastLaunchAt_ = nowSeconds();
+  std::string err;
+  if (!proc_.spawnArgv(l.exe, l.workdir, l.args, dataDir() / "logs" / "mpv.log", err, l.env)) {
+    toast(err, theme::err, 7);
+    return false;
+  }
+  sess_ = Session{SessionKind::App, "app:" + activeApp_->info().id, l.title, nowSeconds(), nowSeconds(), true};
+  sessionApp_ = activeApp_;
+  beginSession();
+  input_.tick(0.4f, 60);
+  return true;
+}
+
 // ---- menus ---------------------------------------------------------------------------
 
 void App::openConfirm(const std::string& title, const std::string& msg, const std::string& okLabel,
@@ -1008,6 +1122,10 @@ void App::openConfirm(const std::string& title, const std::string& msg, const st
 void App::openGameMenu() {
   const GameEntry* g = selected();
   if (!g) return;
+  if (isAppSlug(g->slug)) {  // apps have no install options
+    doPrimary(*g);
+    return;
+  }
   std::string slug = g->slug, name = g->name;
   const Installed* inst = installer_->installed(slug);
   auto job = installer_->job(slug);
@@ -1287,7 +1405,7 @@ void App::closePanel(bool restoreGame) {
 }
 
 void App::panelAction() {
-  bool native = sess_.kind == SessionKind::Native;
+  bool native = sess_.kind == SessionKind::Native || sess_.kind == SessionKind::App;
   if (panelSel_ == 0) {
     closePanel();
   } else if (panelSel_ == 1) {

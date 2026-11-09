@@ -39,5 +39,8 @@ chromium
 fonts-liberation
 fonts-noto-color-emoji
 
+# Video player for the Jellyfin app (driven over its JSON IPC socket by the launcher).
+mpv
+
 # Boot animation (replaces the scrolling [ OK ] console output).
 plymouth

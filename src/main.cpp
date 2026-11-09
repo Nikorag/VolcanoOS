@@ -20,6 +20,7 @@ static void usage() {
       "  --demo                offline fixture library (no network, fake installs)\n"
       "  --screen NAME         with --demo: signin | signin-phone | system | wifi | bluetooth | about\n"
       "  --press a,b,x,right   with --demo: scripted inputs (up down left right a b x y lb rb start)\n"
+      "  --app NAME            open an app straight away, skipping Zonto sign-in (development): jellyfin\n"
       "  --fake-game PATH      with --demo: really run this executable for native launches (overlay testing)\n"
       "  --ui-lint             exit 3 if a key prompt overlaps text, a button or another prompt\n"
       "  --shot FILE.png       render a few frames, save a screenshot, exit\n"
@@ -52,6 +53,7 @@ int main(int argc, char** argv) {
     else if (a == "--demo") o.demo = true;
     else if (a == "--ui-lint") o.lint = true;
     else if (a == "--screen") o.screen = next();
+    else if (a == "--app") o.app = next();
     else if (a == "--fake-game") o.fakeGame = next();
     else if (a == "--shot") o.shotPath = next();
     else if (a == "--shot-frame") o.shotFrame = std::atoi(next().c_str());

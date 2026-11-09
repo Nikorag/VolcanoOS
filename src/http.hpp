@@ -17,6 +17,7 @@ struct HttpRequest {
   std::string body;
   std::string contentType;  // empty = none
   std::string bearer;       // empty = no Authorization header
+  std::vector<std::string> headers;  // extra "Name: value" lines (third-party servers with their own auth scheme)
   long timeoutSec = 30;
 };
 

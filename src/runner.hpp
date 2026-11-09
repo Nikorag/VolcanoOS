@@ -24,6 +24,9 @@ class GameProcess {
   // `env` is added to the launcher's environment (used to hand the game its overlay-bridge port + token).
   bool spawn(const fs::path& exe, const fs::path& workdir, const std::string& args, const fs::path& logFile,
              std::string& err, const Env& env = {});
+  // Same, with the argument vector given explicitly (no whitespace splitting: titles and URLs survive intact).
+  bool spawnArgv(const fs::path& exe, const fs::path& workdir, const std::vector<std::string>& args,
+                 const fs::path& logFile, std::string& err, const Env& env = {});
   bool running() const { return valid_; }
   // Non-blocking. Returns true once the process has ended and fills exitCode.
   bool poll(int& exitCode);
