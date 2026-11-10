@@ -956,14 +956,15 @@ std::string JellyfinApp::backdropFor(const JfItem& it) const {
 void JellyfinApp::drawBackdrop(const JfItem* it, double now) {
   Gfx& g = c_.gfx;
   const float W = g.W();
+  g.rect(0, 0, W, g.H(), Color(14, 11, 10, 255));
   if (it) {
     if (const ArtImage* a = c_.art.get(backdropFor(*it)))
-      g.cover(a->tex, a->w, a->h, W - 1340, 0, 1340, 760, c_.art.fade(a, now), 0.3f);
+      g.cover(a->tex, a->w, a->h, 0, 0, W, g.H(), c_.art.fade(a, now), 0.3f);
   }
-  g.hgrad(0, 0, W * 0.30f, g.H(), Color(14, 11, 10, 255), Color(14, 11, 10, 240));
-  g.hgrad(W * 0.30f, 0, W * 0.28f, g.H(), Color(14, 11, 10, 240), Color(14, 11, 10, 110));
-  g.hgrad(W * 0.58f, 0, W * 0.22f, g.H(), Color(14, 11, 10, 110), Color(14, 11, 10, 0));
-  g.vgrad(0, 440, W, 330, Color(14, 11, 10, 0), Color(14, 11, 10, 255));  // fully dark by the time the backdrop ends (y=760)
+  // keep text legible: an even dim over the whole picture, darker at the left and bottom
+  g.rect(0, 0, W, g.H(), Color(14, 11, 10, 110));
+  g.hgrad(0, 0, W * 0.45f, g.H(), Color(14, 11, 10, 200), Color(14, 11, 10, 0));
+  g.vgrad(0, g.H() * 0.55f, W, g.H() * 0.45f, Color(14, 11, 10, 0), Color(14, 11, 10, 230));
 }
 
 void JellyfinApp::drawTop(double now, const std::string& crumb) {
