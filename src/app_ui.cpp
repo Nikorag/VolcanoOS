@@ -357,11 +357,7 @@ void App::drawHome(double now, float dt) {
 
   // Track hero changes for the cross-fade and the info slide.
   std::string url = g ? g->heroUrl : "";
-  if (url != heroCur_) {
-    heroPrev_ = heroCur_;
-    heroCur_ = url;
-    heroSince_ = now;
-  }
+  heroCur_ = url;  // what the cursor is on; drawHero decides when it is ready to be shown
   std::string slug = g ? g->slug : "";
   if (slug != infoSlug_) {
     infoSlug_ = slug;
@@ -513,15 +509,23 @@ void App::drawPages(double now) {
 void App::drawHero(const GameEntry* g, double now) {
   const float W = gfx_.W();
   const float hw = 1340, hx = W - hw, hh = gfx_.H();
-  float k = ui::easeOut(static_cast<float>((now - heroSince_) / 0.6));
-
+  // Cross-fade only once the new art has actually loaded, and keep the old picture fully drawn
+  // underneath until then. (Fading the old one out while the new one is still downloading, or
+  // restarting the fade on every cursor step, strobes the whole background.)
+  if (!heroCur_.empty()) art_->get(heroCur_);  // start loading
+  const ArtImage* curImg = heroCur_.empty() ? nullptr : art_->get(heroCur_);
+  if ((heroCur_.empty() || curImg) && heroLive_ != heroCur_) {
+    heroPrev_ = heroLive_;
+    heroLive_ = heroCur_;
+    heroSince_ = now;
+  }
+  const float k = ui::easeOut(static_cast<float>((now - heroSince_) / 0.4));
   auto one = [&](const std::string& u, float a) {
     if (a <= 0 || u.empty()) return;
-    if (const ArtImage* img = art_->get(u))
-      gfx_.cover(img->tex, img->w, img->h, hx, 0, hw, hh, a * art_->fade(img, now), 0.f);
+    if (const ArtImage* img = art_->get(u)) gfx_.cover(img->tex, img->w, img->h, hx, 0, hw, hh, a, 0.f);
   };
-  one(heroPrev_, 1 - k);
-  one(heroCur_, k);
+  if (k < 1.f) one(heroPrev_, heroLive_.empty() ? 1 - k : 1.f);
+  one(heroLive_, k);
 
   // No hero art: show the logo large and soft instead of an empty hole.
   if (g && g->heroUrl.empty()) {
@@ -715,8 +719,8 @@ void App::drawTile(const GameEntry& g, float x, float y, float s, float focus, d
   const float r = s * 0.22f;
   if (focus > 0.02f) gfx_.glow(x + s / 2, y + s / 2 + 14, s * 0.95f, s * 0.8f, Color(0, 0, 0, 120).alpha(focus));
   // Fill the whole tile with art: the wide key art when there is some, else the logo image.
-  const ArtImage* fill = g.heroUrl.empty() ? nullptr : art_->get(g.heroUrl, 512);
-  if (!fill) fill = art_->get(g.logoUrl, 512);
+  const ArtImage* fill = g.heroUrl.empty() ? nullptr : art_->get(g.heroUrl, 288);
+  if (!fill) fill = art_->get(g.logoUrl, 288);
   if (fill) {
     gfx_.rrectGrad(x, y, s, s, r, Color(46, 36, 30), Color(30, 23, 19));
     gfx_.imageRound(fill->tex, fill->w, fill->h, x, y, s, s, r, art_->fade(fill, now));

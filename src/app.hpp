@@ -252,7 +252,7 @@ class App {
   struct HitRect { float x, y, w, h; int idx; };
   std::vector<HitRect> hits_;
 
-  std::string heroCur_, heroPrev_;
+  std::string heroCur_, heroPrev_, heroLive_;  // wanted / fading out / shown (ready)
   double heroSince_ = 0;
   float infoSlide_ = 1;
   std::string infoSlug_;
