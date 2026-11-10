@@ -450,6 +450,11 @@ std::string Jellyfin::imageUrl(const std::string& id, const std::string& kind, c
   return u;
 }
 
+std::string Jellyfin::avatarUrl(const JfSession& s, int size) {
+  if (s.server.empty() || s.userId.empty()) return {};
+  return s.server + "/Users/" + urlEncode(s.userId) + "/Images/Primary?maxHeight=" + std::to_string(size) + "&quality=90";
+}
+
 std::string Jellyfin::streamUrl(const JfItem& it) const {
   JfSession s = session();
   std::string u = s.server + "/Videos/" + urlEncode(it.id) + "/stream?static=true";

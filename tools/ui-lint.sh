@@ -30,6 +30,7 @@ CASES=(
   "jellyfin home|--screen jellyfin"
   "jellyfin library|--screen jellyfin-grid"
   "jellyfin show|--screen jellyfin-detail"
+  "jellyfin users|--screen jellyfin-users"
   "jellyfin movie|--screen jellyfin-movie"
   "jellyfin servers|--screen jellyfin-setup"
   "jellyfin quick connect|--screen jellyfin-code"

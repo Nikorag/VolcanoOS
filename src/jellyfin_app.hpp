@@ -33,7 +33,7 @@ class JellyfinApp : public AppModule {
   std::string sessionStatus() const override;
 
  private:
-  enum class Mode { Setup, Home, Grid, Detail };
+  enum class Mode { Setup, Users, Home, Grid, Detail };
   enum class Step { Servers, Probing, QuickConnect, Password, Signing };
   struct Row {
     std::string title;
@@ -56,7 +56,14 @@ class JellyfinApp : public AppModule {
   // ---- persistence / session ------------------------------------------------------------------------
   void loadState();
   void saveState();
-  void signOut();
+  void signOut();                 // forget the current user
+  void afterSignOut();            // Who's watching if others are saved, else server setup
+  void beginUsers();
+  void switchTo(int idx);
+  void rememberAccount(const JfSession& s);
+  bool handleUsers(Action a);
+  void drawUsers(double now);
+  void drawAvatar(const JfSession& s, float cx, float cy, float d, double now);
   bool failed(int status, const std::string& error);  // 401 -> back to setup; otherwise toast. true if handled.
 
   // ---- setup ------------------------------------------------------------------------------------------
@@ -114,6 +121,11 @@ class JellyfinApp : public AppModule {
   int gen_ = 0;  // bumped on sign-out: late results from the old session are dropped
   std::string deviceId_;
   double openedAt_ = 0;
+
+  // saved users
+  std::vector<JfSession> accounts_;
+  int userSel_ = 0;
+  bool userRemove_ = false;  // focus on the Remove pill under the selected user
 
   // setup
   Step step_ = Step::Servers;

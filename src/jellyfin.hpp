@@ -90,6 +90,7 @@ class Jellyfin {
   JfResult<bool> setPlayed(const std::string& id, bool played);
 
   // Image URL (public endpoint: no token needed). `kind`: Primary, Backdrop, Thumb.
+  static std::string avatarUrl(const JfSession& s, int size);
   std::string imageUrl(const std::string& id, const std::string& kind, const std::string& tag, int maxHeight) const;
   // Direct-play URL for mpv. The token travels in a header (see playHeaders), never in the URL.
   std::string streamUrl(const JfItem& it) const;

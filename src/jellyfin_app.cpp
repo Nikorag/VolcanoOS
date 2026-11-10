@@ -54,6 +54,8 @@ std::string fmtTime(double sec) {
   return b;
 }
 
+std::string serverNameOr(const JfSession& s) { return s.serverName.empty() ? s.server : s.serverName; }
+
 std::string runtimeText(int min) {
   if (min <= 0) return {};
   if (min < 60) return std::to_string(min) + "m";
@@ -75,9 +77,10 @@ std::string loadDeviceId() {
 
 }  // namespace
 
-JellyfinApp::JellyfinApp(AppContext& c) : AppModule(c), jf_(loadDeviceId(), "Volcano OS", VOS_VERSION) {
+JellyfinApp::JellyfinApp(AppContext& c) : AppModule(c), deviceId_(loadDeviceId()), jf_(deviceId_, "Volcano OS", VOS_VERSION) {
   demo_ = c.demo;
   loadState();
+  saveState();  // persist the device id now: tokens are bound to it
 }
 
 AppModule::Info JellyfinApp::info() const {
@@ -100,7 +103,6 @@ void JellyfinApp::loadState() {
   if (readFile(dataDir() / "jellyfin.json", text)) {
     json j = json::parse(text, nullptr, false);
     if (j.is_object()) {
-      deviceId_ = j.value("deviceId", "");
       server_ = j.value("lastServer", "");
       serverName_ = j.value("lastServerName", "");
       if (j.contains("session") && j["session"].is_object()) {
@@ -111,15 +113,32 @@ void JellyfinApp::loadState() {
         s.userId = x.value("userId", "");
         s.userName = x.value("userName", "");
       }
+      if (j.contains("accounts") && j["accounts"].is_array())
+        for (const json& x : j["accounts"]) {
+          if (!x.is_object()) continue;
+          JfSession a;
+          a.server = x.value("server", "");
+          a.serverName = x.value("serverName", "");
+          a.token = x.value("token", "");
+          a.userId = x.value("userId", "");
+          a.userName = x.value("userName", "");
+          if (a.valid()) accounts_.push_back(a);
+        }
     }
   }
-  if (s.valid()) jf_.setSession(s);
+  if (s.valid()) {
+    jf_.setSession(s);
+    rememberAccount(s);
+  }
 }
 
 void JellyfinApp::saveState() {
   if (demo_) return;
   JfSession s = jf_.session();
-  json j = {{"deviceId", deviceId_.empty() ? loadDeviceId() : deviceId_}, {"lastServer", server_}, {"lastServerName", serverName_}};
+  json j = {{"deviceId", deviceId_}, {"lastServer", server_}, {"lastServerName", serverName_}};
+  j["accounts"] = json::array();
+  for (const JfSession& a : accounts_)
+    j["accounts"].push_back({{"server", a.server}, {"serverName", a.serverName}, {"token", a.token}, {"userId", a.userId}, {"userName", a.userName}});
   if (s.valid())
     j["session"] = {{"server", s.server}, {"serverName", s.serverName}, {"token", s.token}, {"userId", s.userId}, {"userName", s.userName}};
   const fs::path p = dataDir() / "jellyfin.json";
@@ -129,23 +148,65 @@ void JellyfinApp::saveState() {
 #endif
 }
 
+void JellyfinApp::rememberAccount(const JfSession& s) {
+  for (JfSession& a : accounts_)
+    if (a.server == s.server && a.userId == s.userId) {
+      a = s;
+      return;
+    }
+  accounts_.push_back(s);
+}
+
 void JellyfinApp::signOut() {
   JfSession s = jf_.session();
   ++gen_;
+  accounts_.erase(std::remove_if(accounts_.begin(), accounts_.end(),
+                                 [&](const JfSession& a) { return a.server == s.server && a.userId == s.userId; }),
+                  accounts_.end());
   jf_.setSession({});
   rows_.clear();
   stack_.clear();
   grid_.clear();
   homeLoadedAt_ = 0;
   saveState();
-  logf("jellyfin: signed out");
+  logf("jellyfin: forgot %s", s.userName.c_str());
+}
+
+void JellyfinApp::afterSignOut() {
+  if (accounts_.empty()) beginSetup();
+  else beginUsers();
+}
+
+void JellyfinApp::beginUsers() {
+  mode_ = Mode::Users;
+  userSel_ = 0;
+  userRemove_ = false;
+  const JfSession cur = jf_.session();
+  for (size_t i = 0; i < accounts_.size(); ++i)
+    if (accounts_[i].server == cur.server && accounts_[i].userId == cur.userId) userSel_ = static_cast<int>(i);
+}
+
+void JellyfinApp::switchTo(int idx) {
+  if (idx < 0 || idx >= static_cast<int>(accounts_.size())) return;
+  ++gen_;
+  jf_.setSession(accounts_[idx]);
+  server_ = accounts_[idx].server;
+  serverName_ = accounts_[idx].serverName;
+  rows_.clear();
+  stack_.clear();
+  grid_.clear();
+  homeLoadedAt_ = 0;
+  row_ = 0;
+  mode_ = Mode::Home;
+  saveState();
+  loadHome(true);
 }
 
 bool JellyfinApp::failed(int status, const std::string& error) {
   if (status == 401) {
     c_.toast("Your Jellyfin session expired. Sign in again.", theme::warn);
     signOut();
-    beginSetup();
+    afterSignOut();
     return true;
   }
   c_.toast(error.empty() ? "Jellyfin request failed" : error, theme::err);
@@ -162,7 +223,7 @@ void JellyfinApp::open() {
     return;
   }
   if (!jf_.signedIn()) {
-    beginSetup();
+    afterSignOut();
     return;
   }
   mode_ = Mode::Home;
@@ -172,6 +233,7 @@ void JellyfinApp::open() {
 bool JellyfinApp::handle(Action a) {
   switch (mode_) {
     case Mode::Setup: return handleSetup(a);
+    case Mode::Users: return handleUsers(a);
     case Mode::Home: return handleHome(a);
     case Mode::Grid: return handleGrid(a);
     case Mode::Detail: return handleDetail(a);
@@ -182,6 +244,7 @@ bool JellyfinApp::handle(Action a) {
 void JellyfinApp::draw(double now, float dt, PadStyle st) {
   switch (mode_) {
     case Mode::Setup: drawSetup(now, st); break;
+    case Mode::Users: drawUsers(now); break;
     case Mode::Home: drawHome(now, dt, st); break;
     case Mode::Grid: drawGrid(now, dt, st); break;
     case Mode::Detail: drawDetail(now, dt, st); break;
@@ -356,6 +419,7 @@ void JellyfinApp::signInPassword() {
 
 void JellyfinApp::finishSignIn(const JfSession& s) {
   jf_.setSession(s);
+  rememberAccount(s);
   saveState();
   user_.clear();
   pass_.clear();
@@ -376,7 +440,11 @@ bool JellyfinApp::handleSetup(Action a) {
   else if (a == Action::Down && n) setupSel_ = (setupSel_ + 1) % n;
   else if (a == Action::Y && step_ == Step::Servers) discoverServers();
   else if (a == Action::Back) {
-    if (step_ == Step::Servers) return true;
+    if (step_ == Step::Servers) {
+      if (accounts_.empty()) return true;
+      beginUsers();
+      return false;
+    }
     step_ = Step::Servers;
     setupSel_ = 0;
     setupError_.clear();
@@ -482,10 +550,7 @@ bool JellyfinApp::handleHome(Action a) {
       case Action::Accept:
         if (headSel_ == 0) search();
         else if (headSel_ == 1) loadHome(true);
-        else c_.confirm("Sign out of Jellyfin?", "You will need to sign in again to watch.", "SIGN OUT", [this] {
-               signOut();
-               beginSetup();
-             });
+        else beginUsers();
         break;
       default: break;
     }
@@ -981,23 +1046,44 @@ void JellyfinApp::drawTop(double now, const std::string& crumb) {
     g.text("›  " + g.ellipsize(crumb, t, W * 0.4f), x, cy - g.measure(crumb, t).y / 2, t);
   }
   if (mode_ == Mode::Home) {
-    // header actions: search / refresh / sign out
-    const char* labels[3] = {"Search", "Refresh", "Sign out"};
+    // header actions: search / refresh / current user (opens Who's watching)
+    const JfSession me = jf_.session();
+    const std::string label = me.userName.empty() ? "User" : me.userName;
     float rx = W - kM;
     for (int i = 2; i >= 0; --i) {
       TextStyle t = head(19, theme::text, false);
-      const float w = g.measure(labels[i], t).x + 44;
+      const char* names[3] = {"Search", "Refresh", ""};
+      const std::string txt = i == 2 ? g.ellipsize(label, t, 220) : names[i];
+      const float w = g.measure(txt, t).x + (i == 2 ? 44 + 30 : 44);
       rx -= w;
       const bool foc = row_ == -1 && headSel_ == i;
       ui::glass(g, rx, cy - 22, w, 44, 22, 1.f, foc ? 0.95f : 0.7f);
       if (foc) ui::focusRing(g, rx, cy - 22, w, 44, 22);
-      g.text(labels[i], rx + 22, cy - g.measure(labels[i], t).y / 2, t);
+      if (i == 2) {
+        drawAvatar(me, rx + 26, cy, 34, now);
+        g.text(txt, rx + 50, cy - g.measure(txt, t).y / 2, t);
+      } else {
+        g.text(txt, rx + 22, cy - g.measure(txt, t).y / 2, t);
+      }
       rx -= 10;
     }
     TextStyle u = body(18, theme::dim);
-    const std::string who = status();
+    const std::string who = serverNameOr(me);
     g.text(who, rx - 14 - g.measure(who, u).x, cy - g.measure(who, u).y / 2, u);
   }
+}
+
+void JellyfinApp::drawAvatar(const JfSession& s, float cx, float cy, float d, double now) {
+  Gfx& g = c_.gfx;
+  const Color t = ui::tint(s.userId.empty() ? s.userName : s.userId);
+  g.circle(cx, cy, d / 2, Color::mix(theme::panelHi, t, 0.55f));
+  const std::string initial = s.userName.empty() ? "?" : upper(s.userName.substr(0, 1));
+  TextStyle it = head(d * 0.46f, Color(255, 255, 255));
+  Vec2 m = g.measure(initial, it);
+  g.text(initial, cx - m.x / 2, cy - m.y / 2, it);
+  if (!demo_)
+    if (const ArtImage* a = c_.art.get(Jellyfin::avatarUrl(s, static_cast<int>(d * 2))))
+      if (a->tex) g.imageRound(a->tex, a->w, a->h, cx - d / 2, cy - d / 2, d, d, d / 2, c_.art.fade(a, now));
 }
 
 void JellyfinApp::drawTile(const JfItem& it, float x, float y, float w, float h, bool landscape, bool focused, double now) {
@@ -1316,6 +1402,100 @@ void JellyfinApp::drawSetup(double now, PadStyle) {
   }
 }
 
+// ---- who's watching ------------------------------------------------------------------------------------------------------------
+
+bool JellyfinApp::handleUsers(Action a) {
+  const int n = static_cast<int>(accounts_.size());  // + 1 "Add user" tile at index n
+  switch (a) {
+    case Action::Left: userRemove_ = false; userSel_ = std::max(0, userSel_ - 1); break;
+    case Action::Right: userRemove_ = false; userSel_ = std::min(n, userSel_ + 1); break;
+    case Action::Down: if (userSel_ < n) userRemove_ = true; break;
+    case Action::Up: userRemove_ = false; break;
+    case Action::Back:
+      if (jf_.signedIn()) { mode_ = Mode::Home; return false; }
+      return true;
+    case Action::Accept:
+      if (userSel_ >= n) {
+        beginSetup();
+      } else if (userRemove_) {
+        const int idx = userSel_;
+        c_.confirm("Remove " + accounts_[idx].userName + "?", "They will need to sign in again to use Jellyfin on this console.", "REMOVE",
+                   [this, idx] {
+                     if (idx >= static_cast<int>(accounts_.size())) return;
+                     const JfSession gone = accounts_[idx];
+                     const JfSession cur = jf_.session();
+                     accounts_.erase(accounts_.begin() + idx);
+                     if (gone.server == cur.server && gone.userId == cur.userId) {
+                       ++gen_;
+                       jf_.setSession({});
+                       rows_.clear();
+                       homeLoadedAt_ = 0;
+                     }
+                     saveState();
+                     userRemove_ = false;
+                     userSel_ = std::min(userSel_, static_cast<int>(accounts_.size()));
+                   });
+      } else {
+        switchTo(userSel_);
+      }
+      break;
+    default: break;
+  }
+  return false;
+}
+
+void JellyfinApp::drawUsers(double now) {
+  Gfx& g = c_.gfx;
+  const float W = g.W();
+  g.vgrad(0, 0, W, g.H(), Color(24, 16, 30), theme::bg);
+  g.glow(W / 2, 240, 760, 340, kJf.alpha(0.18f));
+  drawTop(now, "");
+  TextStyle title = head(44, theme::text);
+  title.align = Align::Center;
+  g.text("Who's watching?", W / 2, 230, title);
+
+  const int n = static_cast<int>(accounts_.size());
+  const int cells = n + 1;
+  const float cell = std::min(240.f, (W - 2 * kM) / cells);
+  const float x0 = (W - cell * cells) / 2;
+  const float cy = 520;
+  const JfSession cur = jf_.session();
+  for (int i = 0; i < cells; ++i) {
+    const float cx = x0 + cell * (i + 0.5f);
+    const bool sel = i == userSel_;
+    const bool foc = sel && !userRemove_;
+    const float d = sel ? 190.f : 164.f;
+    if (foc) g.glow(cx, cy + 10, d * 0.9f, d * 0.7f, kJf.alpha(0.35f));
+    TextStyle nt = head(26, sel ? theme::text : theme::dim, sel);
+    nt.align = Align::Center;
+    if (i < n) {
+      const JfSession& s = accounts_[i];
+      drawAvatar(s, cx, cy, d, now);
+      g.text(g.ellipsize(s.userName, nt, cell - 16), cx, cy + d / 2 + 26, nt);
+      TextStyle st = body(17, theme::faint);
+      st.align = Align::Center;
+      const bool active = jf_.signedIn() && s.server == cur.server && s.userId == cur.userId;
+      g.text(g.ellipsize(active ? "Signed in · " + serverNameOr(s) : serverNameOr(s), st, cell - 16), cx, cy + d / 2 + 62, st);
+      if (sel) {
+        TextStyle rt = head(17, userRemove_ ? theme::text : theme::dim, userRemove_);
+        const float w = g.measure("Remove", rt).x + 36;
+        const float py = cy + d / 2 + 96;
+        ui::glass(g, cx - w / 2, py, w, 38, 19, 1.f, userRemove_ ? 0.95f : 0.5f);
+        if (userRemove_) ui::focusRing(g, cx - w / 2, py, w, 38, 19);
+        g.text("Remove", cx - w / 2 + 18, py + (38 - g.measure("Remove", rt).y) / 2, rt);
+      }
+    } else {
+      g.circle(cx, cy, d / 2, theme::panel);
+      g.circle(cx, cy, d / 2 - 2, theme::panelHi.alpha(0.6f));
+      TextStyle pt = head(d * 0.5f, sel ? theme::text : theme::dim);
+      Vec2 m = g.measure("+", pt);
+      g.text("+", cx - m.x / 2, cy - m.y / 2, pt);
+      g.text("Add user", cx, cy + d / 2 + 26, nt);
+    }
+    if (foc) g.rrectLine(cx - d / 2 - 6, cy - d / 2 - 6, d + 12, d + 12, d / 2 + 6, 4, Color(255, 255, 255));
+  }
+}
+
 // ---- demo ------------------------------------------------------------------------------------------------------------------------
 
 void JellyfinApp::loadDemo() {
@@ -1327,6 +1507,13 @@ void JellyfinApp::loadDemo() {
   s.userId = "u1";
   s.userName = "Jamie";
   jf_.setSession(s);
+  accounts_ = {s};
+  for (auto [id, nm] : {std::pair<const char*, const char*>{"u2", "Sam"}, {"u3", "Alex"}, {"u4", "Movie Night"}}) {
+    JfSession o = s;
+    o.userId = id;
+    o.userName = nm;
+    accounts_.push_back(o);
+  }
   auto mk = [](const char* id, const char* name, const char* type, int year, int mins, const char* ov) {
     JfItem i;
     i.id = id;
@@ -1385,6 +1572,10 @@ void JellyfinApp::loadDemo() {
 }
 
 void JellyfinApp::demoScreen(const std::string& v) {
+  if (v == "users") {
+    beginUsers();
+    return;
+  }
   if (v == "setup" || v == "code" || v == "password") {
     mode_ = Mode::Setup;
     serverName_ = "Living Room";
