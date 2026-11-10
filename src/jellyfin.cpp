@@ -84,7 +84,9 @@ HttpResponse Jellyfin::call(const std::string& method, const std::string& server
   rq.method = method;
   rq.url = server + path;
   rq.timeoutSec = 20;
-  rq.headers.push_back(authHeader(true, token));
+  // The two public probes need no identity; leaving the header off rules it out as the cause of a 400.
+  const bool publicProbe = path == "/System/Info/Public" || path == "/QuickConnect/Enabled";
+  if (!publicProbe) rq.headers.push_back(authHeader(true, token));
   if (!body.empty()) {
     rq.body = body;
     rq.contentType = "application/json";
