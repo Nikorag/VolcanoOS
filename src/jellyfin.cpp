@@ -89,7 +89,15 @@ HttpResponse Jellyfin::call(const std::string& method, const std::string& server
     rq.body = body;
     rq.contentType = "application/json";
   }
-  return httpRequest(rq);
+  HttpResponse r = httpRequest(rq);
+  if (!r.ok()) {
+    std::string snip = r.body.substr(0, 300);
+    for (char& ch : snip)
+      if (ch == '\n' || ch == '\r') ch = ' ';
+    logf("jellyfin: %s %s -> %ld %s%s", method.c_str(), (server + path).c_str(), static_cast<long>(r.status),
+         r.error.c_str(), snip.c_str());
+  }
+  return r;
 }
 
 template <class T>
@@ -101,7 +109,15 @@ JfResult<T> Jellyfin::fail(const HttpResponse& r) const {
   else if (r.status == 404) o.error = "Not found";
   else {
     json j = json::parse(r.body, nullptr, false);
-    o.error = (j.is_object() && !str(j, "Message").empty()) ? str(j, "Message") : "Server error " + std::to_string(r.status);
+    o.error = "Server error " + std::to_string(r.status);
+    if (j.is_object()) {
+      if (!str(j, "Message").empty()) o.error = str(j, "Message");
+      else if (j.contains("errors") && j["errors"].is_object() && !j["errors"].empty()) {
+        // ASP.NET validation problem: {"errors": {"Field": ["what is wrong"]}}
+        const auto& e = *j["errors"].begin();
+        o.error = "Server error " + std::to_string(r.status) + " (" + j["errors"].begin().key() + (e.is_array() && !e.empty() && e[0].is_string() ? ": " + e[0].get<std::string>() : "") + ")";
+      } else if (!str(j, "title").empty()) o.error = "Server error " + std::to_string(r.status) + " (" + str(j, "title") + ")";
+    }
   }
   return o;
 }

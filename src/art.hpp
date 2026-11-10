@@ -26,7 +26,9 @@ class Art {
   ~Art();
 
   // nullptr until ready. `url` may be empty (returns nullptr).
-  const ArtImage* get(const std::string& url);
+  // maxDim > 0: a separate, box-filtered copy no larger than maxDim on its long edge. Use it for small
+  // draws of big art (tiles): a huge texture sampled down without filtering shimmers as it moves.
+  const ArtImage* get(const std::string& url, int maxDim = 0);
   // 0..1 fade-in progress once ready.
   float fade(const ArtImage* a, double now, double dur = 0.45) const;
 

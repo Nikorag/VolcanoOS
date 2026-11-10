@@ -715,8 +715,8 @@ void App::drawTile(const GameEntry& g, float x, float y, float s, float focus, d
   const float r = s * 0.22f;
   if (focus > 0.02f) gfx_.glow(x + s / 2, y + s / 2 + 14, s * 0.95f, s * 0.8f, Color(0, 0, 0, 120).alpha(focus));
   // Fill the whole tile with art: the wide key art when there is some, else the logo image.
-  const ArtImage* fill = g.heroUrl.empty() ? nullptr : art_->get(g.heroUrl);
-  if (!fill) fill = art_->get(g.logoUrl);
+  const ArtImage* fill = g.heroUrl.empty() ? nullptr : art_->get(g.heroUrl, 512);
+  if (!fill) fill = art_->get(g.logoUrl, 512);
   if (fill) {
     gfx_.rrectGrad(x, y, s, s, r, Color(46, 36, 30), Color(30, 23, 19));
     gfx_.imageRound(fill->tex, fill->w, fill->h, x, y, s, s, r, art_->fade(fill, now));
