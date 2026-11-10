@@ -972,8 +972,8 @@ void JellyfinApp::drawTop(double now, const std::string& crumb) {
   const float W = g.W();
   const float cy = 76;
   // wordmark: gradient disc + name
-  g.circle(kM + 20, cy, 20, kJf);
-  g.circle(kM + 28, cy + 4, 14, kJf2.alpha(0.85f));
+  if (const ArtImage* logo = c_.art.get("file://" + (assetDir() / "apps" / "jellyfin-logo.png").string()))
+    g.contain(logo->tex, logo->w, logo->h, kM, cy - 22, 44, 44, c_.art.fade(logo, now));
   g.text("Jellyfin", kM + 56, cy - g.measure("Jellyfin", head(26, theme::text)).y / 2, head(26, theme::text));
   float x = kM + 56 + g.measure("Jellyfin", head(26, theme::text)).x + 18;
   if (!crumb.empty()) {
