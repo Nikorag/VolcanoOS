@@ -253,7 +253,8 @@ class App {
   std::vector<HitRect> hits_;
 
   std::string heroCur_, heroPrev_, heroLive_;  // wanted / fading out / shown (ready)
-  double heroSince_ = 0;
+  double heroSince_ = 0, heroWantAt_ = 0;
+  std::string heroWant_;  // what the cursor is on right now (heroCur_ follows after a short rest)
   float infoSlide_ = 1;
   std::string infoSlug_;
 

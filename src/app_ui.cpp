@@ -357,7 +357,13 @@ void App::drawHome(double now, float dt) {
 
   // Track hero changes for the cross-fade and the info slide.
   std::string url = g ? g->heroUrl : "";
-  heroCur_ = url;  // what the cursor is on; drawHero decides when it is ready to be shown
+  // Only react to the cursor once it has rested a moment: stepping quickly along the row must not
+  // swap (and download, and cross-fade) a different background on every step.
+  if (url != heroWant_) {
+    heroWant_ = url;
+    heroWantAt_ = now;
+  }
+  if (now - heroWantAt_ >= 0.22) heroCur_ = heroWant_;
   std::string slug = g ? g->slug : "";
   if (slug != infoSlug_) {
     infoSlug_ = slug;
