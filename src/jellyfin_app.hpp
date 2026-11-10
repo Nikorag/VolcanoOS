@@ -115,11 +115,11 @@ class JellyfinApp : public AppModule {
   static std::string resumeLabel(const JfItem& it);
 
   // ---- state -----------------------------------------------------------------------------------------------------------
+  std::string deviceId_;  // must come before jf_: the constructor initialises jf_ from it
   Jellyfin jf_;
   Mode mode_ = Mode::Setup;
   bool demo_ = false;
   int gen_ = 0;  // bumped on sign-out: late results from the old session are dropped
-  std::string deviceId_;
   double openedAt_ = 0;
 
   // saved users

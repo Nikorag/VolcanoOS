@@ -20,7 +20,7 @@ using SurfacePtr = std::shared_ptr<SDL_Surface>;
 
 // Area-average downscale (SDL_BlitScaled is nearest-neighbour and sparkles on halftone art).
 SurfacePtr boxShrink(SurfacePtr in, int maxDim) {
-  if (!in || std::max(in->w, in->h) <= maxDim) return in;
+  if (!in || maxDim <= 0 || std::max(in->w, in->h) <= maxDim) return in;
   SDL_Surface* src = SDL_ConvertSurfaceFormat(in.get(), SDL_PIXELFORMAT_RGBA32, 0);
   if (!src) return in;
   const float k = static_cast<float>(maxDim) / std::max(src->w, src->h);
